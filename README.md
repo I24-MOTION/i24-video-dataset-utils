@@ -55,10 +55,12 @@ The following files are included in this dataset:
           ... for each camera (234 total)
     - track/
        - <tracking_run_name>_results.cpkl - stored results from running the specified tracking-by-detection algorithm on the included detection set. File is a pickle file consisting of:
-              list of (tensor,int) - each tensor corresponds to a single tracked object and is of size [n_positions,7], with each row consisting of: time,x_pos,y_pos,length,width,height,<garbage>,detection_confidence. The int in the tuple indicates the vehicle class.
+              list of (tensor,int) - each tensor corresponds to a single tracked object and is of size [n_positions,7], with each row consisting of:
+              [time,x_pos,y_pos,length,width,height,<garbage>,detection_confidence]. The int in the tuple indicates the vehicle class.
        ... for all tracking runs
        - results_ORACLE.gps  - stored results from running the oracle tracker on the included detection set. File is a pickle file consisting of:
-              dictionary of tensors keyed by corresponding ground-truth object ID - each tensor corresponds to a single tracked object and is of size [n_positions,7], with each row consisting of: time,x_pos,y_pos,length,width,height,<garbage>,detection_confidence. 
+              dictionary of tensors keyed by corresponding ground-truth object ID - each tensor corresponds to a single tracked object and is of size [n_positions,7], with each row consisting of:
+              [time,x_pos,y_pos,length,width,height,<garbage>,detection_confidence. ]
        - GPS.cpkl - stores GPS positional data (the same data as in final_gps.csv but raveled by object id rather than observation to save time for tracking evaluation).
               dictionary of dictionaries keyed by object ID - each dictionary has fields:
 
@@ -91,9 +93,12 @@ The following files are included in this dataset:
            - P_PXXCXX_EB.npy - ...
            ... for each camera where a valid homography can be defined (otherwise array will be filled with nans)
     
-    - final_detections.npy - numpy array of size [n_total_detections,8] with each row corresponding to: ["time (s)","Roadway X (ft)","Roadway Y (ft)","length (ft)","width (ft)","height (ft)","class","det confidence"]
-    - final_gps.csv        - csv file with each row corresponding to a gps recorded (and subsequently corrected) vehicle position: ['id', 'State Plane X (ft)', 'State Plane Y (ft)', 'Roadway X (ft)', 'Roadway Y (ft)', 'Timestamp (s)', 'Length (ft)', 'Width (ft)', 'Height (ft)']
-    - final_manual.csv     - csv file with each row corresponding to a manually annotated vehicle position: ['id', 'Roadway X (ft)', 'Roadway Y (ft)', 'Timestamp (s)', 'Length (ft)', 'Width (ft)', 'Height (ft)']
+    - final_detections.npy - numpy array of size [n_total_detections,8] with each row corresponding to:
+                             ["time (s)","Roadway X (ft)","Roadway Y (ft)","length (ft)","width (ft)","height (ft)","class","det confidence"]
+    - final_gps.csv        - csv file with each row corresponding to a gps recorded (and subsequently corrected) vehicle position:
+                             ['id', 'State Plane X (ft)', 'State Plane Y (ft)', 'Roadway X (ft)', 'Roadway Y (ft)', 'Timestamp (s)', 'Length (ft)', 'Width (ft)', 'Height (ft)']
+    - final_manual.csv     - csv file with each row corresponding to a manually annotated vehicle position:
+                             ['id', 'Roadway X (ft)', 'Roadway Y (ft)', 'Timestamp (s)', 'Length (ft)', 'Width (ft)', 'Height (ft)']
     - final_redactions.cpkl - a pickle file containing a dictionary keyed by camera name (e.g. "P09C04"). Each entry contains a list of redacted polygon-regions with a start and end time such that the user can deal with these regions as desired (e.g. black pixels or random noise).
     - WACV2024_hg_save.cpkl - a saved file containing all relevant homography and coordinate system data to initialize an `I24_RCS object` (see below) without a need for additional data files.
 
