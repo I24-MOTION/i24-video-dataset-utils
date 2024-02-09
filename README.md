@@ -98,3 +98,9 @@ The following files are included in this dataset:
 
 
  # Code
+A few minimal scripts are included to get you started working with the data:
+
+## Requirements:
+   - i24_rcs - implements the coordinate system and homography containers for easy coordinate system transformations. Available [here](https://github.com/DerekGloudemans/i24_rcs).
+   - py-motmetrics - needed for evaluation of tracking results. Available [here](https://github.com/cheind/py-motmetrics)
+   - Nvidia VPF - needed for loading video frames and timestamps using hardware acceleration and python bindings (you can work with the data without this but given the file size it will be tremendously slow and burdensome). Available [here](https://github.com/NVIDIA/VideoProcessingFramework).
