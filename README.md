@@ -4,6 +4,9 @@ This repository contains utilities for working with the I-24 MOTION Video "I24V"
 This is a multi-camera video dataset consisting of 234 hours of video data recorded concurrently from 234 overlapping HD cameras covering the 4.2 mile length of the I-24 MOTION testbed. The video is recorded during a period of high traffic density with 500+ objects typically visible within the scene and typical object longevities of 3-15 minutes. While dense object tracking information is infeasible to annotate, GPS trajectories from 270 vehicle passes through the scene are manually corrected in the video data to provide a set of ground-truth trajectories for recall-oriented tracking metrics, and object detections are provided for each camera in the scene (159 million total before cross-camera fusion).
 
 
+![Example frame](readme_im/detections_and_gps.png)
+*Example frames with GPS-annotated vehicle positions (green) and detection set (white) shown*
+
 # Data Use Agreement
 1. You are free to use the data in academic and commercial work. 
 2. The dataset contains images comprised of anonymous vehicles. Any activities to re-identify individuals in the dataset or activities that may cause harm to individuals in the dataset are prohibited.
