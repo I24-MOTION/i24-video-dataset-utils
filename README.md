@@ -56,6 +56,7 @@ The following files are included in this dataset:
               dictionary of tensors keyed by corresponding ground-truth object ID - each tensor corresponds to a single tracked object and is of size [n_positions,7], with each row consisting of: time,x_pos,y_pos,length,width,height,<garbage>,detection_confidence. 
        - GPS.cpkl - stores GPS positional data (the same data as in final_gps.csv but raveled by object id rather than observation to save time for tracking evaluation).
               dictionary of dictionaries keyed by object ID - each dictionary has fields:
+
                    id - unique object id (int)
                    run - pass-number for this vehicle through the camera system (int)
                    x  - tensor of x_positions (ft)
@@ -67,8 +68,24 @@ The following files are included in this dataset:
        
     - hg/
        - static/
+           - H_PXXCXX_WB.npy - 3x3 matrix of H (used for image-space 2D point transformation) for the westbound side of the roadway in this camera based on the best-fit average homography over the 1 hour of video recording
+           - H_PXXCXX_EB.npy - 3x3 matrix of H (used for image-space 2D point transformation) for the eastbound side of the roadway in this camera ...
+           - P_PXXCXX_WB.npy - 3x4 matrix of P (used for space-image 3D point transformation) for the westbound side of the roadway in this camera ...
+           - P_PXXCXX_EB.npy - 3x4 matrix of P (used for space-image 3D point transformation) for the eastbound side of the roadway in this camera ...
+           ... for each camera where a valid homography can be defined (otherwise array will be filled with nans)
        - dynamic/
-       - reference/
+           - H_PXXCXX_WB.npy - Nx3x3 matrix of H (used for image-space 2D point transformation) for the westbound side of the roadway in this camera. Each item along the 0th dimension corresponds to the homography matrix for a single point in time (computed at 10-second intervals. The correct time-varying homography can be determined by dividing the timestamp by this 10-second interval and selecting the closest-indexed matrix).
+           - H_PXXCXX_EB.npy - Nx3x3 matrix of H (used for image-space 2D point transformation) for the eastbound side of the roadway in this camera. ...
+           - P_PXXCXX_WB.npy - Nx3x4 matrix of P (used for space-image 3D point transformation) for the westbound side of the roadway in this camera. ...
+           - P_PXXCXX_EB.npy - Nx3x4 matrix of P (used for space-image 3D point transformation) for the eastbound side of the roadway in this camera. ...
+           ... for each camera where a valid homography can be defined (otherwise array will be filled with nans)
+       - reference/ 
+           - H_PXXCXX_WB.npy - same format as static/ but each homography is uncorrected (i.e. relative to the original reference image in reference/)
+           - H_PXXCXX_EB.npy - ...
+           - P_PXXCXX_WB.npy - ...
+           - P_PXXCXX_EB.npy - ...
+           ... for each camera where a valid homography can be defined (otherwise array will be filled with nans)
+    
     - final_detections.npy
     - final_gps.csv
     - final_manual.csv
