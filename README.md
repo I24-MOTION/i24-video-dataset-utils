@@ -86,11 +86,11 @@ The following files are included in this dataset:
            - P_PXXCXX_EB.npy - ...
            ... for each camera where a valid homography can be defined (otherwise array will be filled with nans)
     
-    - final_detections.npy
-    - final_gps.csv
-    - final_manual.csv
-    - final_redactions.cpkl
-    - WACV2024_hg_save.cpkl
+    - final_detections.npy - numpy array of size [n_total_detections,8] with each row corresponding to: ["time (s)","Roadway X (ft)","Roadway Y (ft)","length (ft)","width (ft)","height (ft)","class","det confidence"]
+    - final_gps.csv        - csv file with each row corresponding to a gps recorded (and subsequently corrected) vehicle position: ['id', 'State Plane X (ft)', 'State Plane Y (ft)', 'Roadway X (ft)', 'Roadway Y (ft)', 'Timestamp (s)', 'Length (ft)', 'Width (ft)', 'Height (ft)']
+    - final_manual.csv     - csv file with each row corresponding to a manually annotated vehicle position: ['id', 'Roadway X (ft)', 'Roadway Y (ft)', 'Timestamp (s)', 'Length (ft)', 'Width (ft)', 'Height (ft)']
+    - final_redactions.cpkl - a pickle file containing a dictionary keyed by camera name (e.g. "P09C04"). Each entry contains a list of redacted polygon-regions with a start and end time such that the user can deal with these regions as desired (e.g. black pixels or random noise).
+    - WACV2024_hg_save.cpkl - a saved file containing all relevant homography and coordinate system data to initialize an `I24_RCS object` (see below) without a need for additional data files.
 
 
 
