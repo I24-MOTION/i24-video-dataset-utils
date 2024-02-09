@@ -133,6 +133,8 @@ A few minimal scripts are included to get you started working with the data:
    
     dv.run()
 
+![](readme_im/ex.webm)
+
 ## evaluate.py Usage
 For comparing the results of a tracking run against ground-truth trajectories (from GPS data)
 
