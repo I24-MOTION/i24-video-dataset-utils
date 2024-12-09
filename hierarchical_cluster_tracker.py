@@ -11,7 +11,7 @@ import copy
 
 from matplotlib.patches import Rectangle
 
-colors = np.random.rand(10000,3)
+colors = np.random.rand(20000,3)
 #colors[:,2] = 0    
 
 
@@ -158,7 +158,7 @@ def hierarchical_tree(start_x,end_x,start_time,end_time,space_chunk,time_chunk,s
     if (end_time - start_time > time_chunk) and (not split_space or (end_x - start_x) <= space_chunk):
         middle_time = start_time + (end_time - start_time)//2
         tree["interface_t"] = middle_time
-        tree["interface_width_t"] = time_chunk
+        tree["interface_width_t"] = time_chunk //2
         
         # if end_x - start_x > space_chunk:
         #     middle_x = start_x + (end_x - start_x)//2
@@ -178,7 +178,7 @@ def hierarchical_tree(start_x,end_x,start_time,end_time,space_chunk,time_chunk,s
     elif end_x - start_x > space_chunk:
         middle_x = start_x + (end_x - start_x)//2
         tree["interface_x"] = middle_x
-        tree["interface_width_x"] = space_chunk
+        tree["interface_width_x"] = space_chunk//2
         
         children = [
             hierarchical_tree(start_x,middle_x,start_time,end_time,space_chunk,time_chunk,split_space = not(split_space)),
@@ -1488,6 +1488,7 @@ def generate_msf_failed(tracklets,start_time,end_time,start_x,end_x,grid_t = 2,g
         
 def track_chunk(data_dir,tree,params,q = None,SHOW = False):
    tm = Timer()
+   msf_dict = None 
    
    tm.split("data loading")
    
@@ -1499,36 +1500,43 @@ def track_chunk(data_dir,tree,params,q = None,SHOW = False):
    data_dir = params["data_dir"]  
    path = "{}/tracklets_{}_{}_{}_{}.cpkl".format(data_dir,start_time,end_time,start_x,end_x)
    
-   interface_x = tree["interface_x"]
-   interface_t = tree["interface_t"]
-   interface_width_t = tree["interface_width_t"]
-   interface_width_x = tree["interface_width_x"]
+   tree2 = copy.deepcopy(tree)
+   interface_x = tree2["interface_x"]
+   interface_t = tree2["interface_t"]
+   interface_width_t = tree2["interface_width_t"]
+   interface_width_x = tree2["interface_width_x"]
    
    
    # if get_tracklets is passed interface parameters, it will subdivide tracklets into 3 catergories (with 2 seam idxs instead of 1)
    # first half, second half , irrelevant (pass through to end of process as tracklets_complete)
    
-   tracklets,seams,tracklets_complete = get_tracklets(data_dir,tree)
+   tracklets,seams,passthrough = get_tracklets(data_dir,tree)
+   
+   if len(tracklets) == 0: raise Exception
+   
    seam_idx = None
    if len(seams) == 2:
        seam_idx = seams[0]
        print("\nUSING SEAM IDX {}\n".format(seam_idx)) 
-       
+       if q is not None: q.put([tree,"\nUSING SEAM IDX {}\n".format(seam_idx)])
    
    # if interface parameters were specified, modify the start and end params to reflect the interface
    if interface_x is not None:
        start_x = max(start_x,interface_x - interface_width_x)
        end_x   = min(end_x,interface_x + interface_width_x)
+       if q is not None: q.put([tree,"Using interface x width of {}, with {} tracklets and {} pass_through tracklets".format(interface_width_x,len(tracklets),len(passthrough))])
+
    elif interface_t is not None:
        start_time = max(start_time,interface_t - interface_width_t)
        end_time = min(end_time,interface_t + interface_width_t)
-       if q is not None: q.put([tree,"Using interface t width of {}, with {} complete tracklets".format(interface_width_t,len(tracklets_complete))])
+       if q is not None: q.put([tree,"Using interface t width of {}, with {} tracklets and {} pass_through tracklets".format(interface_width_t,len(tracklets),len(passthrough))])
    
    tm.split("queue write")
    
+   tracklets_complete = []
    
-   if q is not None:
-        q.put([tree,tracklets,tracklets_complete,-1,None])
+   
+   #if q is not None:        q.put([tree,tracklets,tracklets_complete,-1,None])
    
     
    for iteration in range(len(params["t_thresholds"])):
@@ -1568,8 +1576,7 @@ def track_chunk(data_dir,tree,params,q = None,SHOW = False):
            tm.split("scores_linear_init")
            align_x,align_y,align_xb,align_yb = compute_scores_linear(tracklets,intersection,params,iteration,align_x,align_y,align_xb,align_yb)
        if mode == "msf": # overwrite align_x with msf-based distances
-           try: msf_dict
-           except: 
+           if msf_dict is None or iteration in [2,8,12]:
                tm.split("get_msf")
                msf_dict = generate_msf(tracklets, start_time, end_time, start_x, end_x)
                #if q is not None:   q.put("Got MSF for  {} {} {} {}".format(start_x,end_x,start_time,end_time))
@@ -1659,7 +1666,7 @@ def track_chunk(data_dir,tree,params,q = None,SHOW = False):
                         FINAL = True
                         #if q is not None: q.put("Final Iteration")
                         
-                        if iteration == 1:
+                        if iteration == 16:
                             # remove all tracklets that are more or less entirely subcontained within another tracklet
                              #durations = (intersection_other["max_t"].transpose(1,0) - intersection_other["min_t"] - t_threshold)[:,0]
                             
@@ -1728,6 +1735,37 @@ def track_chunk(data_dir,tree,params,q = None,SHOW = False):
                        
                        plt.show()
                    
+                   SHOW3 = True
+                   lane = 1
+                   if SHOW3 and CHANGEME % 10 == 0: 
+                       plt.figure(figsize = (20,40))
+                       for tidx in np.arange(0,len(tracklets),step = 1):
+                               t = tracklets[tidx]
+                                 
+                               keep = torch.where(torch.logical_and(t[:,2] < -12*lane,t[:,2] > -12*(lane+1)),1,0).nonzero().squeeze(1)
+                               if len(keep) == 0: continue 
+                           
+                               c = colors[tidx]
+                               
+                               tt = t[keep,:]
+                               plt.plot(tt[:,0],tt[:,1],c=c,linewidth=2)
+                               
+                               if msf_dict is not None:
+                                   virtual = get_msf_points(t,msf_dict,extra_t = pass_params["t_thresholds"][-2])
+                                   plt.plot(virtual[:,0],virtual[:,1],":",c=(0.2,0.2,0.2))
+                           
+                       for tidx in np.arange(0,len(tracklets_complete),step = 1):
+                                 t = tracklets_complete[tidx]
+                                 keep = torch.where(torch.logical_and(t[:,2] < -12*lane,t[:,2] > -12*(lane+1)),1,0).nonzero().squeeze(1)
+                                 if len(keep) == 0: continue 
+                         
+                                 
+                                 c = (0,0,1)
+                                 plt.plot(t[keep,0],t[keep,1],c=c,linewidth=2)    
+                                 #plt.plot(t[:,0],t[:,1],c = (1,1,1),linewidth=2)
+                       plt.title("Iteration {}, {} / {} tracklets".format(iteration,len(tracklets),len(tracklets_complete)))
+                       plt.show()
+                       
                    if i >j: # ensure j > i for deletion purposes
                        j1 = j
                        j = i
@@ -1796,9 +1834,13 @@ def track_chunk(data_dir,tree,params,q = None,SHOW = False):
                         removals.append(i)
 
                tm.split("intersect_update")
-               if not I_COMPLETE: # if I_COMPLETE, row and column i will be zeroed out at the bottom so we don't need to do anything
+               if not I_COMPLETE and not FINAL: # if I_COMPLETE, row and column i will be zeroed out at the bottom so we don't need to do anything
                    # in the other case, we simply assume that intersection [i+j] will include all the intersections of i and of j
-                   intersection,intersection_other = compute_intersections(tracklets, t_threshold, x_threshold, y_threshold,i = i,intersection = intersection,intersection_other = intersection_other,j = j)                   
+                   #try: 
+                       intersection,intersection_other = compute_intersections(tracklets, t_threshold, x_threshold, y_threshold,i = i,intersection = intersection,intersection_other = intersection_other,j = j)                   
+                   #except UnboundLocalError: 
+                   #    pass # this happen
+                   
                 
                # we are going to change this block so that it is only run every 50 or so joins
                if (CHANGEME+1) >31  or FINAL:
@@ -1822,7 +1864,7 @@ def track_chunk(data_dir,tree,params,q = None,SHOW = False):
                    for r in removals:
                        keep.remove(r)
 
-                   keep = torch.tensor(keep)
+                   keep = torch.tensor(keep,dtype = int)
                        
                    # delete portions of matrices 
                    intersection   = intersection[keep,:][:,keep]
@@ -1897,16 +1939,19 @@ def track_chunk(data_dir,tree,params,q = None,SHOW = False):
        tm.split("queue write")     
        if q is not None:
            if iteration < len(params["t_thresholds"]) -1:
-               q.put([tree,tracklets,tracklets_complete,iteration,None])
+               q.put([tree,[t.data.numpy() for t in tracklets+passthrough],[t.data.numpy() for t in tracklets_complete],iteration,None])
            # else:
            #     q.put([tracklets,tracklets_complete,iteration,None])
    # save results 
    tm.split("data write")
    
    with open(path,"wb") as f:
-       pickle.dump([tracklets,tracklets_complete],f)
+       pickle.dump([tracklets+passthrough,tracklets_complete],f)
    tm.split("cleanup")
-   if q is not None: q.put([tree,tracklets,tracklets_complete,iteration,tm.bins()])
+   
+   
+   
+   if q is not None: q.put([tree,[t.data.numpy() for t in tracklets+passthrough],[t.data.numpy() for t in tracklets_complete],iteration,tm.bins()])
    if q is not None: q.put([tree,"DONE"]) 
     
    #time.sleep(1) # hoping to flush queue?
@@ -2143,23 +2188,41 @@ if __name__ == "__main__":
 
 
     df   = "/home/worklab/Documents/datasets/I24-V/final_detections.npy"
-    data_dir = "data/0"
+    data_dir = "data/bm1"
     
     # select a time and space chunk to work on 
+    #data/0
     start_time = 0
-    end_time = 3600
-    start_x = 7000
-    end_x  = 10000
+    end_time = 75
+    start_x = 11000
+    end_x  = 14000
     direction = -1
     
-    # start_time = 2180
-    # end_time = 2240
-    # start_x = 10000
+    #data/1
+    # start_time = 0
+    # end_time = 900
+    # start_x = 7000
+    # end_x  = 10000
+    # direction = -1
+    
+    # data/3
+    # start_time = 1000
+    # end_time = 1720
+    # start_x = 3000
     # end_x  = 13000
     # direction = -1
+    
+    #data/4
+    # start_time = 2000
+    # end_time = 2060
+    # start_x = 0
+    # end_x  = 22000
+    # direction = -1
+    
+
         
     space_chunk = 3000
-    time_chunk = 600
+    time_chunk = 60
     
     delta = 0.3
     phi = 0.4
@@ -2227,7 +2290,7 @@ if __name__ == "__main__":
     
     #%% step 2 hierarchical wrapper
     space_chunk = 3000
-    time_chunk = 20
+    time_chunk = 30
     
     with open("msf_raw.cpkl","rb") as f:
         msf_dict = pickle.load(f)
@@ -2237,7 +2300,7 @@ if __name__ == "__main__":
     #tree = time_ordered_tree(start_x, end_x, start_time, end_time, time_chunk)
     #chunks = get_tree_leaves(tree)
     
-    mode = ["linear" for _ in range(3)] + ["msf" for _ in range(14)] + ["msf"]
+    mode = ["linear" for _ in range(3)] + ["msf" for _ in range(14)] + ["overlap"]
     t_thresholds = [1,2,2,2,2,3,3,3,3,3,3,3,3,3,3,3,6,0]                       # tracklets beyond this duration apart from one another are not considered
     pass_params = {"t_thresholds":t_thresholds,
     "cutoff_dists" : [3,5,7,8,10,10,10,10,12,15,15,17,18,20,22,22,22,0],      # tracklets with a minimum scored match of > _ ft apart are not matched
@@ -2273,7 +2336,7 @@ if __name__ == "__main__":
     
     removals = []
     loaded_files = []
-    plot_counter = 0
+    plot_counter = 3250
     
     
     
@@ -2347,7 +2410,7 @@ if __name__ == "__main__":
         
         
         # spin up worker wrappers
-        if False:
+        if True:
             worker_wrapper(data_dir,pass_params,None,process_queue,process_lock)
         else:
             workers = []
@@ -2406,6 +2469,11 @@ if __name__ == "__main__":
                             #print("Got data from queue")
                             job = data[0] # WILL have to get this info from queue instead now
                             
+                            
+                            # we have to convert back from numpy to torch...
+                            data[1] = [torch.from_numpy(d) for d in data[1]]
+                            data[2] = [torch.from_numpy(d) for d in data[2]]
+                            
                             # if data[2] >= len(t_thresholds) -2:
                             #     data[2] = "DONE"
                             put_data_in_tree(data[1:4], tree, job["start_time"], job["end_time"], job["start_x"], job["end_x"])
@@ -2422,6 +2490,8 @@ if __name__ == "__main__":
                         
                     except queue.Empty:
                         CONTINUE = False
+
+                        
             
             
             tm.split("Manage process tree")   
@@ -2458,26 +2528,28 @@ if __name__ == "__main__":
             tm.split("Plot and report")
             # only plot if we're not waiting to start new processes
             if CHANGED:
-                print("\n----------------------------------------------------------------")
-                print("WORKER TIME USAGE:")
-                print("----------------------------------------------------------------")
                 elapsed = (time.time() - start)
-                total = time_tracker["total"]
-                for key in time_tracker:
-                    print("{}: {:.1f}% ---- {:.1f}s".format(key.ljust(30),time_tracker[key]/total*100,time_tracker[key]))
-                #print("Total time: {:.1f}s [{:.1f}s on main process] for {} processes -- {:.1f}s/process [{:.1f}s main process time]".format(total,total_worker_active_time,n_workers,total/n_workers,elapsed))
-            
-                bins = tm.bins()
-                print("\nMANAGER TIME USAGE:")
-                print("----------------------------------------------------------------")
 
-                total = bins["total"]
-                for key in bins:
-                    print("{}: {:.1f}% ---- {:.1f}s".format(key.ljust(30),bins[key]/total*100,bins[key]))
-                report_time = time.time()
+                if False:
+                    print("\n----------------------------------------------------------------")
+                    print("WORKER TIME USAGE:")
+                    print("----------------------------------------------------------------")
+                    total = time_tracker["total"]
+                    for key in time_tracker:
+                        print("{}: {:.1f}% ---- {:.1f}s".format(key.ljust(30),time_tracker[key]/total*100,time_tracker[key]))
+                    #print("Total time: {:.1f}s [{:.1f}s on main process] for {} processes -- {:.1f}s/process [{:.1f}s main process time]".format(total,total_worker_active_time,n_workers,total/n_workers,elapsed))
                 
-                print("\nWorker business: {:.1f}%".format(time_tracker["total"]/(total*n_workers)*100))
-                print("{:.1f}s elapsed, {} / {} terminated chunks".format(time.time() - start,len(terminated),n_jobs))
+                    bins = tm.bins()
+                    print("\nMANAGER TIME USAGE:")
+                    print("----------------------------------------------------------------")
+    
+                    total = bins["total"]
+                    for key in bins:
+                        print("{}: {:.1f}% ---- {:.1f}s".format(key.ljust(30),bins[key]/total*100,bins[key]))
+                    report_time = time.time()
+                    
+                    print("\nWorker business: {:.1f}%".format(time_tracker["total"]/(total*n_workers)*100))
+                    print("{:.1f}s elapsed, {} / {} terminated chunks".format(time.time() - start,len(terminated),n_jobs))
                 
                 
                 if True:
@@ -2486,7 +2558,7 @@ if __name__ == "__main__":
                     # 2000 ft = 1 minute
                     
                     x_size = 30
-                    ratio = x_size / (end_time - start_time) * 500
+                    ratio = x_size / (end_time - start_time) * 100
                     y_size = int((end_x - start_x) /2000*ratio)
                     
                     plt.figure(figsize = (x_size,y_size))
@@ -2495,20 +2567,20 @@ if __name__ == "__main__":
                     plt.yticks(fontsize=20)
                     plt.xticks(fontsize=20)
                     
-                    trac = 50
-                    freq = 1000000
+                    trac = 1
+                    freq = 1
                     if plot_counter % freq == 0:
-                        trac = 1 
+                        #trac = 1 
                         print("Plotting all tracklets...")
                         
-                    durations  = plot_tree(tree,trac = trac,COLOR = True)
+                        durations  = plot_tree(tree,trac = trac,COLOR = True)
                     
-                    mean_duration = sum(durations)/len(durations)
-                    plt.title("{} tracklets with mean duration {:.1f}s,    {:.1f}s elapsed.".format(len(durations),mean_duration, elapsed),fontsize = 20)
-                    
-                    if plot_counter % freq == 0:
-                        plt.savefig("im/{}.png".format(str(plot_counter).zfill(4)))
-                    plt.show()
+                        mean_duration = sum(durations)/len(durations)
+                        plt.title("{} tracklets with mean duration {:.1f}s,    {:.1f}s elapsed.".format(len(durations),mean_duration, elapsed),fontsize = 10)
+                        
+                        if plot_counter % freq == 0:
+                            plt.savefig("im/{}.png".format(str(plot_counter).zfill(4)))
+                        plt.show()
                     plot_counter += 1
 
             CHANGED = False                
@@ -2526,9 +2598,9 @@ if __name__ == "__main__":
         w[0].kill()
         del w[1]
             
-    x_size = 50
-    ratio = x_size / (end_time - start_time) * 40
-    y_size = int((end_x - start_x) /2000*ratio)
+    # x_size = 50
+    # ratio = x_size / (end_time - start_time) * 40
+    # y_size = int((end_x - start_x) /2000*ratio)
     
     plt.figure(figsize = (x_size,y_size))
     plt.xlim([start_time,end_time])
@@ -2536,7 +2608,7 @@ if __name__ == "__main__":
     plt.yticks(fontsize=20)
     plt.xticks(fontsize=20)
     
-    durations  = plot_tree(tree,trac = 1)
+    durations  = plot_tree(tree,trac = 1,COLOR = True)
     mean_duration = sum(durations)/len(durations)
     plt.title("{} tracklets with mean duration {:.1f}s".format(len(durations),mean_duration),fontsize = 20)
     

@@ -2039,11 +2039,11 @@ if __name__ == "__main__":
 
 
     df   = "/home/worklab/Documents/datasets/I24-V/final_detections.npy"
-    data_dir = "data/1"
+    data_dir = "data/0"
     
     # select a time and space chunk to work on 
     start_time = 0
-    end_time = 900
+    end_time = 3600
     start_x = 7000
     end_x  = 10000
     direction = -1
@@ -2381,7 +2381,7 @@ if __name__ == "__main__":
                     # 2000 ft = 1 minute
                     
                     x_size = 50
-                    ratio = x_size / (end_time - start_time) * 40
+                    ratio = x_size / (end_time - start_time) * 400
                     y_size = int((end_x - start_x) /2000*ratio)
                     
                     plt.figure(figsize = (x_size,y_size))
@@ -2420,9 +2420,7 @@ if __name__ == "__main__":
         w[0].kill()
         del w[1]
             
-    x_size = 50
-    ratio = x_size / (end_time - start_time) * 40
-    y_size = int((end_x - start_x) /2000*ratio)
+
     
     plt.figure(figsize = (x_size,y_size))
     plt.xlim([start_time,end_time])
