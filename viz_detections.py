@@ -8,7 +8,7 @@ import torch
 df   = "/home/worklab/Documents/datasets/I24-V/final_detections.npy"
 #df   = "data/kiou_detections.npy"
 gf   = "data/gap_detections.npy"
-df = "data/clustered_0_100.npy"
+#df = "data/clustered_0_100.npy"
 gpsf = "/home/worklab/Documents/datasets/I24-V/final_gps.csv"
 
 
@@ -18,8 +18,8 @@ class Viewer:
         
 
         self.load_idx = 0
-        self.startx = 13000
-        self.endx = 14500#4000
+        self.startx = 3000
+        self.endx = 22000#4000
         self.starty = -60
         self.endy = 0
         
@@ -27,7 +27,7 @@ class Viewer:
         self.capture = False
         self.frame_idx = 0
         self.multicolor = True
-        self.dot_history = False
+        self.dot_history = True
 
         
         self.grid = True
@@ -78,8 +78,8 @@ class Viewer:
         zs = -1
         xvp = 0,3840,0
         yvp = 0,0,0
-        zvp = 1080,1920
-        origin  = 1080,1920
+        zvp = 1080*2,1920*2
+        origin  = 1080*2,1920*2
 
         
         self.P = torch.tensor([[xvp[0]/xs,yvp[0]/ys,zvp[0]/zs,origin[0]],
@@ -256,7 +256,8 @@ class Viewer:
        self.gps_buffer.append(selection)
         
     def plot3D(self):
-        self.plot_frame = np.zeros([1080,1920,3]).astype(np.uint8)
+        #self.plot_frame = np.zeros([1080,1920,3]).astype(np.uint8)
+        self.plot_frame = np.zeros([1080*2,1920*2,3]).astype(np.uint8)
         
         P = self.P
         
@@ -472,7 +473,7 @@ class Viewer:
                         p3 = int(d[2,1]),int(d[2,0])
                         p4 = int(d[3,1]),int(d[3,0])
                         
-                        if color_idxs is not None: #and idx == self.cur_time_idx:# and self.multicolor == True:
+                        if color_idxs is not None and idx == self.cur_time_idx:# and self.multicolor == True:
                             color = self.color[color_idxs[didx]%1000].astype(np.uint8)
                             color = int(color[0]),int(color[1]),int(color[2])
                         

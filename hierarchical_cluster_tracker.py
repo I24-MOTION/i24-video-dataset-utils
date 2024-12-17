@@ -8,10 +8,11 @@ import os,sys
 import torch.multiprocessing as mp
 import queue
 import copy 
+from scipy.stats import norm
 
 from matplotlib.patches import Rectangle
 
-colors = np.random.rand(20000,3)
+colors = np.random.rand(10000,3)
 #colors[:,2] = 0    
 
 
@@ -25,7 +26,7 @@ zones = { "WB":{
              "source":{
                  "bell":[3300,3400,-120,-65],
                  "hickoryhollow":[6300,6500,-120,-65],
-                 "p25":[13300,13500,-100,0],
+                 "p25":[13300,13550,-100,0],
                  "oldhickory":[18300,18700,-120,-65],
                  "extent":[21900,23000,-100,0]
                  },
@@ -33,7 +34,7 @@ zones = { "WB":{
                  "extent":[-1000,0,-100,0],
                  "bell":[4400,4600,-120,-65],
                  "hickoryhollow":[8000,8200,-120,-65],
-                 "p25":[13500,13650,-100,0],
+                 "p25":[13450,13650,-100,0],
                  "oldhickory":[20400,21000,-120,-65],
                  }
              },
@@ -139,7 +140,7 @@ class Timer:
 #     tree["children"] = children
 #     return tree
 
-def hierarchical_tree(start_x,end_x,start_time,end_time,space_chunk,time_chunk,split_space = True):
+def hierarchical_tree(start_x,end_x,start_time,end_time,space_chunk,time_chunk,pass_param_stack,split_space = True):
     tree = {"start_time":start_time,
             "end_time": end_time,
             "start_x":start_x,
@@ -149,16 +150,29 @@ def hierarchical_tree(start_x,end_x,start_time,end_time,space_chunk,time_chunk,s
             "interface_t": None,
             "interface_width_t":None,
             "data":None,
-            "children":None}
+            "children":None,
+            "pass_params":None}
     
     """
     Balanced to split only on space or time dimension on a single split layer
     """
     
+    # fill in pass params
+    for p in pass_param_stack:
+        if p[0] >= end_time - start_time and p[1] >= np.abs(start_x-end_x):
+            tree["pass_params"] = p[2]
+            break
+        
+    # if tree["pass_params"] is None:
+    #     raise AssertionError( "There are no valid pass_param configurations for at least this block")
+        
+    
     if (end_time - start_time > time_chunk) and (not split_space or (end_x - start_x) <= space_chunk):
         middle_time = start_time + (end_time - start_time)//2
-        tree["interface_t"] = middle_time
-        tree["interface_width_t"] = time_chunk //2
+        
+        if tree["pass_params"] is not None and tree["pass_params"]["INTERFACE"]:
+            tree["interface_t"] = middle_time
+            tree["interface_width_t"] = time_chunk //2  
         
         # if end_x - start_x > space_chunk:
         #     middle_x = start_x + (end_x - start_x)//2
@@ -171,18 +185,19 @@ def hierarchical_tree(start_x,end_x,start_time,end_time,space_chunk,time_chunk,s
         #         ]
         # else:
         children = [
-            hierarchical_tree(start_x,end_x,start_time,middle_time,space_chunk,time_chunk,split_space = not(split_space)),
-            hierarchical_tree(start_x,end_x,middle_time,end_time,space_chunk,time_chunk,split_space = not(split_space)) 
+            hierarchical_tree(start_x,end_x,start_time,middle_time,space_chunk,time_chunk,pass_param_stack,split_space = not(split_space)),
+            hierarchical_tree(start_x,end_x,middle_time,end_time,space_chunk,time_chunk,pass_param_stack,split_space = not(split_space)) 
             ]
         
     elif end_x - start_x > space_chunk:
         middle_x = start_x + (end_x - start_x)//2
-        tree["interface_x"] = middle_x
-        tree["interface_width_x"] = space_chunk//2
+        if tree["pass_params"] is not None and tree["pass_params"]["INTERFACE"]:
+            tree["interface_x"] = middle_x
+            tree["interface_width_x"] = space_chunk//2
         
         children = [
-            hierarchical_tree(start_x,middle_x,start_time,end_time,space_chunk,time_chunk,split_space = not(split_space)),
-            hierarchical_tree(middle_x,end_x,start_time,end_time,space_chunk,time_chunk,split_space = not(split_space))
+            hierarchical_tree(start_x,middle_x,start_time,end_time,space_chunk,time_chunk,pass_param_stack,split_space = not(split_space)),
+            hierarchical_tree(middle_x,end_x,start_time,end_time,space_chunk,time_chunk,pass_param_stack,split_space = not(split_space))
             ]
     
     else:
@@ -412,10 +427,72 @@ def cluster(det,start_time,end_time,start_x,end_x,direction, delta = 0.3, phi = 
     out = torch.cat((det,orig_idxs.unsqueeze(1),ids.unsqueeze(1)),dim = 1)
     out = out.data.numpy()
     np.save(path,out)
+    
+    # time x y l w h class confidence original id clustered id
+    
     print("\nFinished clustering detections for phase 1. Before:{}, After: {}. {:.1f}s elapsed.".format(det.shape[0],count,time.time() - t1))
 
 #%% Phase 2 functions
-
+def resample(tracklets,tracklets_complete, sigma = 0.1,hz = 10):
+    for tidx, tr in enumerate( tracklets):
+        # print("resampling tracklet {}".format(tidx))
+        
+        ts = tr[:,0]
+        x = tr[:,1]
+        y = tr[:,2]
+        
+        ts_resampled = ts #torch.arange(start = ts[0],end = ts[-1]+1/hz,step = 1/hz,dtype = ts.dtype)
+        x_resampled = torch.zeros(ts_resampled.shape[0],dtype = ts.dtype)
+        y_resampled = torch.zeros(ts_resampled.shape[0],dtype = ts.dtype)
+        
+        
+        
+        for i in range(len(ts_resampled)):
+            normal = norm(loc = ts_resampled[i],scale = sigma)
+            
+            weights = normal.pdf(ts)
+            if sum(weights) == 0:
+                normal = norm(loc = ts_resampled[i],scale = sigma*5)
+                weights = normal.pdf(ts)
+            weights = weights/sum(weights)
+            
+            x_resampled[i] = (x*weights).sum()
+            y_resampled[i] = (y*weights).sum()
+            
+            
+        # TODO - we delete all the channels except t,x,y - add them back later
+        tracklets[tidx] = torch.stack([ts_resampled,x_resampled,y_resampled]).transpose(1,0)
+    
+    for tidx, tr in enumerate(tracklets_complete):
+        
+        ts = tr[:,0]
+        x = tr[:,1]
+        y = tr[:,2]
+        
+        ts_resampled = ts #torch.arange(start = ts[0],end = ts[-1]+1/hz,step = 1/hz,dtype = ts.dtype)
+        x_resampled = torch.zeros(ts_resampled.shape[0],dtype = ts.dtype)
+        y_resampled = torch.zeros(ts_resampled.shape[0],dtype = ts.dtype)
+        
+        
+        
+        
+        for i in range(len(ts_resampled)):
+            normal = norm(loc = ts_resampled[i],scale = sigma)
+            weights = normal.pdf(ts)
+            if sum(weights) == 0:
+                normal = norm(loc = ts_resampled[i],scale = sigma*5)
+                weights = normal.pdf(ts)
+            weights = weights/sum(weights)
+            
+            x_resampled[i] = (x*weights).sum()
+            y_resampled[i] = (y*weights).sum()
+            
+            
+        # TODO - we delete all the channels except t,x,y - add them back later
+        tracklets_complete[tidx] = torch.stack([ts_resampled,x_resampled,y_resampled]).transpose(1,0)
+    
+    return tracklets,tracklets_complete
+    
 def compute_intersections(tracklets,t_threshold,x_threshold,y_threshold, i = None, intersection = None,intersection_other = None,seam_idx = None,j = None):
     
     """
@@ -597,7 +674,7 @@ def compute_raster_pos(tracklets, start_time,end_time,start_x,end_x,hz = 0.2, i 
                 y1 = t[tidx-1,2]
                 y2 = t[tidx,  2]
                 
-                r2 = (rt-t1) / (t1-t2)
+                r2 = (rt-t1) / (t2-t1)
                 r1 = 1-r2
                 
                 x_rt = x1*r1  + x2*r2
@@ -1486,19 +1563,25 @@ def generate_msf_failed(tracklets,start_time,end_time,start_x,end_x,grid_t = 2,g
 
 
         
-def track_chunk(data_dir,tree,params,q = None,SHOW = False):
+def track_chunk(data_dir,tree,q = None,SHOW = False):
    tm = Timer()
    msf_dict = None 
+   
+   
    
    tm.split("data loading")
    
    # parse params
+   params = tree["pass_params"]
    start_x    = tree["start_x"]
    end_x      = tree["end_x"]
    start_time = tree["start_time"]
    end_time   = tree["end_time"]
    data_dir = params["data_dir"]  
    path = "{}/tracklets_{}_{}_{}_{}.cpkl".format(data_dir,start_time,end_time,start_x,end_x)
+   
+   t_width = end_time - start_time
+
    
    tree2 = copy.deepcopy(tree)
    interface_x = tree2["interface_x"]
@@ -1576,7 +1659,7 @@ def track_chunk(data_dir,tree,params,q = None,SHOW = False):
            tm.split("scores_linear_init")
            align_x,align_y,align_xb,align_yb = compute_scores_linear(tracklets,intersection,params,iteration,align_x,align_y,align_xb,align_yb)
        if mode == "msf": # overwrite align_x with msf-based distances
-           if msf_dict is None or iteration in [2,8,12]:
+           if msf_dict is None or params["recompute_msf"][iteration]:
                tm.split("get_msf")
                msf_dict = generate_msf(tracklets, start_time, end_time, start_x, end_x)
                #if q is not None:   q.put("Got MSF for  {} {} {} {}".format(start_x,end_x,start_time,end_time))
@@ -1666,7 +1749,7 @@ def track_chunk(data_dir,tree,params,q = None,SHOW = False):
                         FINAL = True
                         #if q is not None: q.put("Final Iteration")
                         
-                        if iteration == 16:
+                        if iteration == 4:
                             # remove all tracklets that are more or less entirely subcontained within another tracklet
                              #durations = (intersection_other["max_t"].transpose(1,0) - intersection_other["min_t"] - t_threshold)[:,0]
                             
@@ -1694,8 +1777,8 @@ def track_chunk(data_dir,tree,params,q = None,SHOW = False):
                    diff = diff.sort()[0]
                     
                    # if there are more than X jumps of size Y, do not allow this match
-                   max_jump = 16
-                   max_jump_count = 10
+                   max_jump = 20
+                   max_jump_count = 3
                    if diff[-min(max_jump_count,len(diff)-1)] > max_jump:
                         align_x[i,j] = big_number
                         align_y[i,j] = big_number
@@ -1735,7 +1818,7 @@ def track_chunk(data_dir,tree,params,q = None,SHOW = False):
                        
                        plt.show()
                    
-                   SHOW3 = True
+                   SHOW3 = False
                    lane = 1
                    if SHOW3 and CHANGEME % 10 == 0: 
                        plt.figure(figsize = (20,40))
@@ -1917,6 +2000,11 @@ def track_chunk(data_dir,tree,params,q = None,SHOW = False):
                if FINAL: break
            
        # end of iteration
+       # resample
+       if False and iteration == 8 and t_width <40 and t_width > 20:
+           tm.split("resample")
+           tracklets,tracklets_complete = resample(tracklets,tracklets_complete)
+       
        tm.split("cleanup")
        assert len(removals) == 0,  "Removals is non-empty at end of iteration."
        
@@ -2154,7 +2242,7 @@ def is_covered(data_dir,job):
     return False
 
 
-def worker_wrapper(data_dir,pass_params,message_q,job_q,process_lock):
+def worker_wrapper(data_dir,message_q,job_q,process_lock):
     
     while True:
         
@@ -2168,7 +2256,7 @@ def worker_wrapper(data_dir,pass_params,message_q,job_q,process_lock):
         if job is not None:
             # start job
             if message_q is not None: message_q.put([job,"worker_wrapper recieved a new job and is starting"])
-            track_chunk(data_dir,job,pass_params,message_q)
+            track_chunk(data_dir,job,message_q)
         
         else:
            break # terminate if you receive a None which will be sent at the end of processing     
@@ -2187,30 +2275,44 @@ if __name__ == "__main__":
 #%% preliminaries
 
 
+    # specifies parameters for a single iteration (i.e. what type, what cutoffs and thresholds)
+    iter_pack = {} # list of iter_packs is an additional attribute added to each node
+    
+    # block_pack contains all of the parameters for a single block, including a series of iter_packs as well as parameters such as whether to use a limited width interface or seam_idxs
+    block_pack = {} # these parameters are stored in the tree nodes
+    
+    # run pack contains a series of block_packs arranged in a tree or rolling list
+    run_pack = {} #- this is just the tree
+
     df   = "/home/worklab/Documents/datasets/I24-V/final_detections.npy"
-    data_dir = "data/bm1"
+    data_dir = "data/1"
     
     # select a time and space chunk to work on 
     #data/0
-    start_time = 0
-    end_time = 75
-    start_x = 11000
-    end_x  = 14000
-    direction = -1
-    
-    #data/1
     # start_time = 0
-    # end_time = 900
+    # end_time = 3600
     # start_x = 7000
     # end_x  = 10000
     # direction = -1
     
-    # data/3
+    #data/1
+    start_time = 0
+    end_time = 900
+    start_x = 7000
+    end_x  = 10000
+    direction = -1
+    space_chunk = 3000
+    time_chunk  = 150
+
+    
+    #data/3
     # start_time = 1000
     # end_time = 1720
     # start_x = 3000
-    # end_x  = 13000
+    # end_x  = 8000
     # direction = -1
+    # space_chunk = 2500
+    # time_chunk = 45
     
     #data/4
     # start_time = 2000
@@ -2219,17 +2321,31 @@ if __name__ == "__main__":
     # end_x  = 22000
     # direction = -1
     
+    #data/bm1
+    # start_time = 0
+    # end_time = 600
+    # start_x = 11000
+    # end_x  = 14000
+    # direction = -1
+    # space_chunk = 3000
+    # time_chunk  = 75
 
-        
-    space_chunk = 3000
-    time_chunk = 60
+    #data/bm2
+    # start_time = 1000
+    # end_time = 1060
+    # start_x = 15000
+    # end_x  = 18000
+    # direction = -1
+    # space_chunk = 3000
+    # time_chunk =75
+
     
     delta = 0.3
     phi = 0.4
 
 #%% step 1
     # get tree for sub-clustering
-    tree = hierarchical_tree(start_x, end_x, start_time, end_time, space_chunk, time_chunk)
+    tree = hierarchical_tree(start_x, end_x, start_time, end_time, space_chunk, time_chunk, {}) # dummy dict is pass params, not necessary for this stage
     chunks = get_tree_leaves(tree)
     
     
@@ -2292,33 +2408,67 @@ if __name__ == "__main__":
     space_chunk = 3000
     time_chunk = 30
     
-    with open("msf_raw.cpkl","rb") as f:
-        msf_dict = pickle.load(f)
-    msf_dict = None
     
-    tree = hierarchical_tree(start_x, end_x, start_time, end_time, space_chunk, time_chunk)
+    
+    # assemble the pass_param stack - a series of pass params along with chunk sizes for which they are valid [[maxt_chunk,maxx_chunk,pass_params],[],..] in order from smallest to largest chunk
+    pass_param_stack = []
+    
+    #param set 1
+    nit = 18
+    maxx_chunk = 3000
+    maxt_chunk = 120
+    pass_params = {
+    "mode"                   : ["linear","linear","linear","linear","linear","msf"   ,"msf"   ,"msf"   ,"msf"   ,"msf"   ,"msf"   ,"msf"   ,"msf"   ,"msf"   ,"msf"   ,"msf"   ,"msf"   ,"overlap"],
+    "t_thresholds"           : [1       ,2       ,2       ,2       ,2       ,3       ,3       ,3       ,3       ,3       ,3       ,3       ,3       ,3       ,3       ,3       ,6       ,0        ],                       # tracklets beyond this duration apart from one another are not considered
+    "cutoff_dists"           : [3       ,5       ,7       ,8       ,10      ,10      ,10      ,10      ,12      ,15      ,15      ,17      ,18      ,20      ,22      ,22      ,22      ,25       ],      # tracklets with a minimum scored match of > _ ft apart are not matched
+    "y_thresholds"           : [2       ,5       ,5       ,5       ,6       ,6       ,7       ,8       ,8       ,8       ,8       ,8       ,8       ,8       ,8       ,8       ,8       ,6        ],                    # tracklets beyond this distance apart from one another are not considered
+    "recompute_msf"          : [False   ,False   ,False   ,False   ,False   ,True    ,False   ,False   ,False   ,False   ,False    ,False   ,False   ,False   ,False   ,False   ,False   ,False    ],  
+    "reg_keeps"              : [30 for _ in range(nit)],                               # the last _ points are used to fit a linear regression and the first _ points from the next tracklet are scored
+    "min_regression_lengths" : [80 for _ in range(nit)],                     # tracklets less than _ in length are not used to fit a linear regression
+    "x_thresholds"           : [400 for _ in range(nit)],                              # tracklets beyond this distance apart from one another are not considered
+    "min_duration"           : 1,
+    "x_margin"               : 100,
+    "t_margin"               : 3,
+    "big_number"             : 10000,
+    "data_dir"               : data_dir,
+    "INTERFACE"              : False,
+    }
+    assert nit == len(pass_params["t_thresholds"])
+    pass_param_stack.append([maxt_chunk, maxx_chunk,pass_params])
+
+    # param set 2
+    nit = 5
+    maxx_chunk = 100000
+    maxt_chunk = 100000
+    pass_params = {
+    "mode"                   : ["msf"   ,"msf"   ,"msf"   ,"msf"   ,"overlap"],
+    "t_thresholds"           : [3       ,3       ,3       ,6       ,0],                       # tracklets beyond this duration apart from one another are not considered
+    "cutoff_dists"           : [20      ,22      ,22      ,22      ,25],      # tracklets with a minimum scored match of > _ ft apart are not matched
+    "y_thresholds"           : [8       ,8       ,8       ,8       ,6],                    # tracklets beyond this distance apart from one another are not considered
+    "recompute_msf"          : [True   ,False   ,False   ,False   ,False   ],  
+    "reg_keeps"              : [30 for _ in range(nit)],                               # the last _ points are used to fit a linear regression and the first _ points from the next tracklet are scored
+    "min_regression_lengths" : [80 for _ in range(nit)],                     # tracklets less than _ in length are not used to fit a linear regression
+    "x_thresholds"           : [400 for _ in range(nit)],                              # tracklets beyond this distance apart from one another are not considered
+    "min_duration"           : 1,
+    "x_margin"               : 100,
+    "t_margin"               : 3,
+    "big_number"             : 10000,
+    "data_dir"               : data_dir,
+    "INTERFACE"              : True,
+
+    }
+    assert nit == len(pass_params["t_thresholds"])
+    pass_param_stack.append([maxt_chunk, maxx_chunk,pass_params])
+    
+    
+    tree = hierarchical_tree(start_x, end_x, start_time, end_time, space_chunk, time_chunk,pass_param_stack)
     #tree = time_ordered_tree(start_x, end_x, start_time, end_time, time_chunk)
     #chunks = get_tree_leaves(tree)
     
-    mode = ["linear" for _ in range(3)] + ["msf" for _ in range(14)] + ["overlap"]
-    t_thresholds = [1,2,2,2,2,3,3,3,3,3,3,3,3,3,3,3,6,0]                       # tracklets beyond this duration apart from one another are not considered
-    pass_params = {"t_thresholds":t_thresholds,
-    "cutoff_dists" : [3,5,7,8,10,10,10,10,12,15,15,17,18,20,22,22,22,0],      # tracklets with a minimum scored match of > _ ft apart are not matched
-    "x_thresholds" : [400 for _ in t_thresholds],                              # tracklets beyond this distance apart from one another are not considered
-    "y_thresholds" : [2,5,5,5,6,6,7,8,8,8,8,8,8,8,8,8,8,8],                    # tracklets beyond this distance apart from one another are not considered
-    "reg_keeps"    : [30 for _ in t_thresholds],                               # the last _ points are used to fit a linear regression and the first _ points from the next tracklet are scored
-    "min_regression_lengths" : [80 for _ in t_thresholds],                     # tracklets less than _ in length are not used to fit a linear regression
-    "min_duration" : 1,
-    "x_margin" : 100,
-    "t_margin" : 3,
-    "big_number" : 10000,
-    "mode":mode,
-    "data_dir":data_dir,
-    }
-    
-    
 
     
+
+   
     
     
     n_workers = 4
@@ -2336,7 +2486,7 @@ if __name__ == "__main__":
     
     removals = []
     loaded_files = []
-    plot_counter = 3250
+    plot_counter = 0
     
     
     
@@ -2410,14 +2560,14 @@ if __name__ == "__main__":
         
         
         # spin up worker wrappers
-        if True:
-            worker_wrapper(data_dir,pass_params,None,process_queue,process_lock)
+        if False:
+            worker_wrapper(data_dir,None,process_queue,process_lock)
         else:
             workers = []
             for i in range(n_workers):
                 message_q = mp.Queue()
                 # create worker process
-                pid = mp.Process(target = worker_wrapper, args = (data_dir,pass_params,message_q,process_queue,process_lock))
+                pid = mp.Process(target = worker_wrapper, args = (data_dir,message_q,process_queue,process_lock))
                 pid.start()
                 workers.append([pid,message_q])
            
@@ -2529,8 +2679,8 @@ if __name__ == "__main__":
             # only plot if we're not waiting to start new processes
             if CHANGED:
                 elapsed = (time.time() - start)
-
-                if False:
+ 
+                if True:
                     print("\n----------------------------------------------------------------")
                     print("WORKER TIME USAGE:")
                     print("----------------------------------------------------------------")
@@ -2558,7 +2708,7 @@ if __name__ == "__main__":
                     # 2000 ft = 1 minute
                     
                     x_size = 30
-                    ratio = x_size / (end_time - start_time) * 100
+                    ratio = x_size / (end_time - start_time) * 40
                     y_size = int((end_x - start_x) /2000*ratio)
                     
                     plt.figure(figsize = (x_size,y_size))
@@ -2567,7 +2717,7 @@ if __name__ == "__main__":
                     plt.yticks(fontsize=20)
                     plt.xticks(fontsize=20)
                     
-                    trac = 1
+                    trac = 100
                     freq = 1
                     if plot_counter % freq == 0:
                         #trac = 1 
@@ -2602,19 +2752,35 @@ if __name__ == "__main__":
     # ratio = x_size / (end_time - start_time) * 40
     # y_size = int((end_x - start_x) /2000*ratio)
     
-    plt.figure(figsize = (x_size,y_size))
-    plt.xlim([start_time,end_time])
-    plt.ylim([start_x,end_x])
-    plt.yticks(fontsize=20)
-    plt.xticks(fontsize=20)
-    
-    durations  = plot_tree(tree,trac = 1,COLOR = True)
-    mean_duration = sum(durations)/len(durations)
-    plt.title("{} tracklets with mean duration {:.1f}s".format(len(durations),mean_duration),fontsize = 20)
-    
-    plt.savefig("im/{}.png".format(str(plot_counter).zfill(4)))
-    plot_counter += 1
-    plt.show() 
+    if False:
+        plt.figure(figsize = (x_size,y_size))
+        plt.xlim([start_time,end_time])
+        plt.ylim([start_x,end_x])
+        plt.yticks(fontsize=20)
+        plt.xticks(fontsize=20)
+        
+        durations  = plot_tree(tree,trac = 1,COLOR = True)
+        mean_duration = sum(durations)/len(durations)
+        plt.title("{} tracklets with mean duration {:.1f}s".format(len(durations),mean_duration),fontsize = 20)
+        
+        plt.savefig("im/{}.png".format(str(plot_counter).zfill(4)))
+        plot_counter += 1
+        plt.show() 
     print(("Finished tracking, {:.1f}s elapsed").format(time.time() - start))
+    
+    from eval_sandbox import evaluate
+    gps = "/home/worklab/Documents/datasets/I24-V/final_gps.csv"
+
+    for file in os.listdir(data_dir):
+        if "tracklets" in file:
+            path = os.path.join(data_dir,file)
+            result = evaluate(path,gps)
+            mean_duration = int(sum(result["all"]["dur"]) / len(result["all"]["dur"]) * 10)
+            save_file = "result_{}".format(mean_duration) + file.split("tracklets")[-1]
+            
+            save_path = os.path.join(data_dir,save_file)
+            with open(save_path,"wb") as f:
+                pickle.dump([pass_param_stack,result],f)
+            
     # tracklets = get_tracklets(data_dir, tree)
     # tracklets,tracklets_complete = track_chunk(tracklets,tree,pass_params)

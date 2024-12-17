@@ -454,11 +454,13 @@ if __name__ == "__main__":
     manual_path    = "/home/worklab/Documents/i24/fast-trajectory-annotator/final_dataset_preparation/final_manual.csv" # path to manually labeled box data (optional)
     detection_path = "/home/worklab/Documents/i24/fast-trajectory-annotator/final_dataset_preparation/final_detections.npy" # path to detection save file (optional)
     video_dir      = "/home/worklab/Data/1hz" #"/home/worklab/Documents/temp_wacv_video" # path to video sequence directory
-    hg_path        = "/home/worklab/Documents/i24/fast-trajectory-annotator/final_dataset_preparation/WACV2024_hg_save.cpkl" # path to hg.cpkl save file
+    #hg_path        = "/home/worklab/Documents/i24/fast-trajectory-annotator/final_dataset_preparation/WACV2024_hg_save.cpkl" # path to hg.cpkl save file
+    hg_path        = "/home/worklab/Documents/i24/fast-trajectory-annotator/final_dataset_preparation/CIRCLES_20_Wednesday_1hour.cpkl"
     camera_names   = ["P20C01","P20C02","P20C03","P20C04","P20C05","P20C06"]
     buffer_window  = 400 # frames load starting with specified time
     start_time     = 0   # timestamp in seconds (first frame is 0 according to timestamps)
     
+
     
     dv = DataViewer(video_dir,
                     camera_names,

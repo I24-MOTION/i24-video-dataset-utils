@@ -546,7 +546,7 @@ def compute_raster_pos(tracklets, start_time,end_time,start_x,end_x,hz = 0.2, i 
                 y1 = t[tidx-1,2]
                 y2 = t[tidx,  2]
                 
-                r2 = (rt-t1) / (t1-t2)
+                r2 = (rt-t1) / (t2-t1)
                 r1 = 1-r2
                 
                 x_rt = x1*r1  + x2*r2
@@ -2039,11 +2039,11 @@ if __name__ == "__main__":
 
 
     df   = "/home/worklab/Documents/datasets/I24-V/final_detections.npy"
-    data_dir = "data/0"
+    data_dir = "data/1"
     
     # select a time and space chunk to work on 
     start_time = 0
-    end_time = 3600
+    end_time = 900
     start_x = 7000
     end_x  = 10000
     direction = -1
