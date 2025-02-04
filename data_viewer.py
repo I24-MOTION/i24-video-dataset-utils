@@ -28,7 +28,7 @@ ctx = mp.get_context('spawn')
 
 # personal modules and packages
 from i24_rcs import I24_RCS
-from nvc_buffer2 import NVC_Buffer
+from nvc_buffer import NVC_Buffer
 
 
 
@@ -92,7 +92,7 @@ class DataViewer:
         for camera in camera_names:
             if ".pts" in camera: continue
             shortname = camera.split("_")[0]
-            if ".mkv" in camera and shortname in view_cameras:
+            if (".mkv" in camera or ".h264" in camera):# and shortname in view_cameras:
                 include_cameras.append(shortname)
                 
            
@@ -112,7 +112,8 @@ class DataViewer:
         
         
         #### get homography
-        self.hg = I24_RCS(save_path = hg_path,downsample = 2)
+        self.hg = I24_RCS(save_path = hg_path,downsample = 2,default = "reference")
+        self.hg.load_correspondences_WACV("/home/worklab/Documents/datasets/I24-V/wacv_hg_v1")
         self.hg.hg_start_time = 0
         self.hg.hg_sec = 10
         
@@ -284,7 +285,6 @@ class DataViewer:
            boxes = torch.cat((boxes,torch.sign(boxes[:,1]).unsqueeze(1)),dim = 1)
            
            if len(ids) > 0:
-               itetwe = 1
                self.hg.plot_state_boxes(frame,boxes,labels = ids,times = frame_ts, name = [self.camera_names[i] for _ in boxes],color = (255,255,0),thickness = 4)
            
            
@@ -447,20 +447,26 @@ class DataViewer:
                
 if __name__ == "__main__":
     
+      
+    with open ("/home/worklab/Documents/i24/fast-trajectory-annotator/gps_newhg_corrected.cpkl","rb") as f:
+        gps = pickle.load(f)
+  
     
     # specify inputs
 
-    gps_path       = "/home/worklab/Documents/i24/fast-trajectory-annotator/final_dataset_preparation/final_gps.csv"  # path to adjusted GPS data (optional)
-    manual_path    = "/home/worklab/Documents/i24/fast-trajectory-annotator/final_dataset_preparation/final_manual.csv" # path to manually labeled box data (optional)
+    gps_path       = "/home/worklab/Documents/datasets/I24-V/final_gps.csv"  # path to adjusted GPS data (optional)
+    manual_path    = "/home/worklab/Documents/datasets/I24-V/final_manual.csv" # path to manually labeled box data (optional)
     detection_path = "/home/worklab/Documents/i24/fast-trajectory-annotator/final_dataset_preparation/final_detections.npy" # path to detection save file (optional)
+    detection_path = "/home/worklab/Documents/i24/i24-video-dataset-utils/CHANGEME.npy"
     video_dir      = "/home/worklab/Data/1hz" #"/home/worklab/Documents/temp_wacv_video" # path to video sequence directory
     #hg_path        = "/home/worklab/Documents/i24/fast-trajectory-annotator/final_dataset_preparation/WACV2024_hg_save.cpkl" # path to hg.cpkl save file
     hg_path        = "/home/worklab/Documents/i24/fast-trajectory-annotator/final_dataset_preparation/CIRCLES_20_Wednesday_1hour.cpkl"
-    camera_names   = ["P20C01","P20C02","P20C03","P20C04","P20C05","P20C06"]
-    buffer_window  = 400 # frames load starting with specified time
+    camera_names   = ["P32C02","P32C04","P32C05","P32C06"]
+    buffer_window  = 500 # frames load starting with specified time
     start_time     = 0   # timestamp in seconds (first frame is 0 according to timestamps)
     
 
+    video_dir = "/home/worklab/Documents/datasets/I24-V/video"
     
     dv = DataViewer(video_dir,
                     camera_names,
@@ -475,9 +481,7 @@ if __name__ == "__main__":
             
   
     
-  
-    
-  
+
     
   
     

@@ -161,7 +161,7 @@ def load_queue_continuous_vpf(q,directory,device,buffer_size,resize,start_time):
     
     # we need to add time offset (in ns)
     time_offset = int(file.split("_")[-1].split(".")[0])
-    #time_offset = 0# int(time_offset)
+    time_offset = 0# int(time_offset)
     
     
     
@@ -298,3 +298,13 @@ def load_queue_continuous_vpf(q,directory,device,buffer_size,resize,start_time):
         # if not NEXTFILE:
             #raise Exception("Reached last file for directory {}".format(directory))
             
+            
+            
+            
+if __name__ == "__main__":
+    q = []
+    directory = "/home/worklab/Documents/datasets/I24-V/video/P32C02_25796864.mkv"
+    load_queue_continuous_vpf(q,directory,2,1000,(1920,1080),None)
+
+    
+    

@@ -6,7 +6,9 @@ import torch
 
 
 df   = "/home/worklab/Documents/datasets/I24-V/final_detections.npy"
-#df   = "data/kiou_detections.npy"
+df   = "data/kiou_detections.npy"
+df = "/home/worklab/Documents/i24/i24-video-dataset-utils/CHANGEME.npy"
+#df = "/home/worklab/Documents/i24/i24-video-dataset-utils/CHANGEME_OLD_DATA.npy"
 gf   = "data/gap_detections.npy"
 #df = "data/clustered_0_100.npy"
 gpsf = "/home/worklab/Documents/datasets/I24-V/final_gps.csv"
@@ -27,7 +29,7 @@ class Viewer:
         self.capture = False
         self.frame_idx = 0
         self.multicolor = True
-        self.dot_history = True
+        self.dot_history = False
 
         
         self.grid = True
@@ -396,8 +398,8 @@ class Viewer:
                 if idx >= 0:
                     
                     color = (255,255,255)
-                    if idx != self.cur_time_idx:
-                        color = (100,100,100)
+                    # if idx != self.cur_time_idx:
+                    #     color = (100,100,100)
                         
                        
                             
@@ -416,7 +418,7 @@ class Viewer:
                         continue
                     
                     color_idxs = None
-                    if det.shape[1] == 9:
+                    if det.shape[1] in  [9,8]:
                         color_idxs = det[:,-1].int()
                     else:
                         color_idxs = det[:,2].int() // -12
@@ -473,7 +475,7 @@ class Viewer:
                         p3 = int(d[2,1]),int(d[2,0])
                         p4 = int(d[3,1]),int(d[3,0])
                         
-                        if color_idxs is not None and idx == self.cur_time_idx:# and self.multicolor == True:
+                        if color_idxs is not None:# and idx == self.cur_time_idx:# and self.multicolor == True:
                             color = self.color[color_idxs[didx]%1000].astype(np.uint8)
                             color = int(color[0]),int(color[1]),int(color[2])
                         
