@@ -135,7 +135,7 @@ class GPUBackendFrameGetter:
         
         try:
             frame = self.queue.get(timeout = 20)
-            ts = frame[1] / 10e8
+            ts = frame[1] 
             im = frame[0]
             
         except:
@@ -161,7 +161,7 @@ def load_queue_continuous_vpf(q,directory,device,buffer_size,resize,start_time):
     
     # we need to add time offset (in ns)
     time_offset = int(file.split("_")[-1].split(".")[0])
-    time_offset = 0# int(time_offset)
+    #time_offset = 0# int(time_offset)
     
     
     
@@ -275,7 +275,7 @@ def load_queue_continuous_vpf(q,directory,device,buffer_size,resize,start_time):
             # apply normalization
             #surface_tensor = F.normalize(surface_tensor,mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
             
-            frame = (surface_tensor,pkt.pts + time_offset)
+            frame = (surface_tensor,(pkt.pts + time_offset) /10e8 )
             q.put(frame)
             ff = False
         # ### Get next file if there is one 
@@ -302,7 +302,8 @@ def load_queue_continuous_vpf(q,directory,device,buffer_size,resize,start_time):
             
             
 if __name__ == "__main__":
-    q = []
+    import queue
+    q = queue.Queue()
     directory = "/home/worklab/Documents/datasets/I24-V/video/P32C02_25796864.mkv"
     load_queue_continuous_vpf(q,directory,2,1000,(1920,1080),None)
 

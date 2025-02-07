@@ -39,7 +39,7 @@ import numpy as np
 import torch
 
 
-
+colors = (np.random.rand(100000,3)*255).astype(np.uint8)
 
 # class with attributes
 # GPS data
@@ -54,14 +54,14 @@ import torch
 # optional - buffer window 
 
 
-class DataViewer:
+class VideoViewer:
     """ 
     """
     
     def __init__(self,
                  video_dir,
                  view_cameras,
-                 hg_path,
+                 hg,
                  start_time, 
                  buffer_frames = 60,
                  gps = None,
@@ -92,7 +92,7 @@ class DataViewer:
         for camera in camera_names:
             if ".pts" in camera: continue
             shortname = camera.split("_")[0]
-            if (".mkv" in camera or ".h264" in camera):# and shortname in view_cameras:
+            if (".mkv" in camera or ".h264" in camera) and shortname in view_cameras:
                 include_cameras.append(shortname)
                 
            
@@ -112,10 +112,13 @@ class DataViewer:
         
         
         #### get homography
-        self.hg = I24_RCS(save_path = hg_path,downsample = 2,default = "reference")
-        self.hg.load_correspondences_WACV("/home/worklab/Documents/datasets/I24-V/wacv_hg_v1")
+        # self.hg = I24_RCS(save_path = hg_path,downsample = 2,default = "reference")
+        # self.hg.load_correspondences_WACV("/home/worklab/Documents/datasets/I24-V/wacv_hg_v1")
+        self.hg = hg
+
         self.hg.hg_start_time = 0
         self.hg.hg_sec = 10
+        
         
         ### get manual data 
         if manual is None:
@@ -242,18 +245,18 @@ class DataViewer:
            if self.DET:
                # plot Detections - np array of:  "time (s)","x_pos (ft)","y_pos (ft)","length (ft)","width (ft)","height (ft)","class","det confidence"
                start = time.time()
-               det_margin = 0.02
+               det_margin = 0.07
                
                # update detection slice start
                if self.detections[self.d1,0] > frame_ts - det_margin:
-                   while self.detections[self.d1,0] > frame_ts - det_margin:
+                   while self.detections[self.d1,0] > frame_ts - det_margin and self.d1 <= 0:
                        self.d1 -= 1
                elif self.detections[self.d1,0] < frame_ts - det_margin:
                     while self.detections[self.d1,0] < frame_ts - det_margin:
                         self.d1 += 1
                
                if self.detections[self.d2,0] > frame_ts + det_margin:
-                    while self.detections[self.d2,0] > frame_ts + det_margin:
+                    while self.detections[self.d2,0] > frame_ts + det_margin and self.d2 <= 0:
                         self.d2 -= 1
                elif self.detections[self.d2,0] < frame_ts + det_margin:
                      while self.detections[self.d2,0] < frame_ts + det_margin:
@@ -261,31 +264,35 @@ class DataViewer:
                        
                boxes = torch.from_numpy(self.detections[self.d1:self.d2,[1,2,3,4,5]].astype(float))
                boxes = torch.cat((boxes,torch.sign(boxes[:,1]).unsqueeze(1)),dim = 1)
+               boxcolors = np.stack([colors[idx] for idx in self.detections[self.d1:self.d2,-1].astype(int)])
+               
                if boxes.shape[0] > 0:
-                    self.hg.plot_state_boxes(frame,boxes,labels = None,times = frame_ts, name = [self.camera_names[i] for _ in boxes],color = (255,255,255),thickness = 1)
+                    self.hg.plot_state_boxes(frame,boxes,labels = None,times = frame_ts, name = [self.camera_names[i] for _ in boxes],color = boxcolors,thickness = 2)
            
            # plot GPS
-           gps_margin = 0.06
-           frame_gps = self.gps[self.gps['t'].between(frame_ts-gps_margin,frame_ts+gps_margin)]
-           ids = frame_gps["id"].to_list()
-           frame_gps = frame_gps.to_numpy()
-           boxes = torch.from_numpy(frame_gps[:,[1,2,4,5,6]].astype(float))
-           boxes = torch.cat((boxes,torch.sign(boxes[:,1]).unsqueeze(1)),dim = 1)
+           if self.gps is not None:
+                gps_margin = 0.06
+                frame_gps = self.gps[self.gps['t'].between(frame_ts-gps_margin,frame_ts+gps_margin)]
+                ids = frame_gps["id"].to_list()
+                frame_gps = frame_gps.to_numpy()
+                boxes = torch.from_numpy(frame_gps[:,[1,2,4,5,6]].astype(float))
+                boxes = torch.cat((boxes,torch.sign(boxes[:,1]).unsqueeze(1)),dim = 1)
            
-           if len(ids) > 0:
-               self.hg.plot_state_boxes(frame,boxes,labels = ids,times = frame_ts, name = [self.camera_names[i] for _ in boxes],color = (0,255,0),thickness = 2)
-           
+                if len(ids) > 0:
+                   self.hg.plot_state_boxes(frame,boxes,labels = ids,times = frame_ts, name = [self.camera_names[i] for _ in boxes],color = (0,255,0),thickness = 2)
+               
            
            # plot Manual
-           manual_margin = 0.06
-           frame_manual = self.manual[self.manual['t'].between(frame_ts-manual_margin,frame_ts+manual_margin)]
-           ids = frame_manual["id"].to_list()
-           frame_manual = frame_manual.to_numpy()
-           boxes = torch.from_numpy(frame_manual[:,[3,1,4,5,6]].astype(float))
-           boxes = torch.cat((boxes,torch.sign(boxes[:,1]).unsqueeze(1)),dim = 1)
-           
-           if len(ids) > 0:
-               self.hg.plot_state_boxes(frame,boxes,labels = ids,times = frame_ts, name = [self.camera_names[i] for _ in boxes],color = (255,255,0),thickness = 4)
+           if self.manual is not None:
+               manual_margin = 0.06
+               frame_manual = self.manual[self.manual['t'].between(frame_ts-manual_margin,frame_ts+manual_margin)]
+               ids = frame_manual["id"].to_list()
+               frame_manual = frame_manual.to_numpy()
+               boxes = torch.from_numpy(frame_manual[:,[3,1,4,5,6]].astype(float))
+               boxes = torch.cat((boxes,torch.sign(boxes[:,1]).unsqueeze(1)),dim = 1)
+               
+               if len(ids) > 0:
+                   self.hg.plot_state_boxes(frame,boxes,labels = ids,times = frame_ts, name = [self.camera_names[i] for _ in boxes],color = (255,255,0),thickness = 4)
            
            
           
@@ -295,7 +302,7 @@ class DataViewer:
            
            if True:
                font =  cv2.FONT_HERSHEY_SIMPLEX
-               header_text = "{} frame {}: {:.3f}s".format(self.camera_names[i],self.frame_idx,self.b.ts[self.frame_idx][i])
+               header_text = "{} frame {}: {:.3f}s".format(self.camera_names[i],self.frame_idx,frame_ts)
                frame = cv2.putText(frame,header_text,(30,30),font,1,(255,255,255),1)
                
            plot_frames.append(frame)
@@ -446,7 +453,6 @@ class DataViewer:
                
                
 if __name__ == "__main__":
-    
       
     with open ("/home/worklab/Documents/i24/fast-trajectory-annotator/gps_newhg_corrected.cpkl","rb") as f:
         gps = pickle.load(f)
@@ -457,20 +463,24 @@ if __name__ == "__main__":
     gps_path       = "/home/worklab/Documents/datasets/I24-V/final_gps.csv"  # path to adjusted GPS data (optional)
     manual_path    = "/home/worklab/Documents/datasets/I24-V/final_manual.csv" # path to manually labeled box data (optional)
     detection_path = "/home/worklab/Documents/i24/fast-trajectory-annotator/final_dataset_preparation/final_detections.npy" # path to detection save file (optional)
-    detection_path = "/home/worklab/Documents/i24/i24-video-dataset-utils/CHANGEME.npy"
+    detection_path = "/home/worklab/Documents/datasets/2025-2-gamma-tracking/MOTION_NEW_TIME.npy"     # each row is [time,x pos,y pos,length,width,height,veh class,id]
+
     video_dir      = "/home/worklab/Data/1hz" #"/home/worklab/Documents/temp_wacv_video" # path to video sequence directory
     #hg_path        = "/home/worklab/Documents/i24/fast-trajectory-annotator/final_dataset_preparation/WACV2024_hg_save.cpkl" # path to hg.cpkl save file
     hg_path        = "/home/worklab/Documents/i24/fast-trajectory-annotator/final_dataset_preparation/CIRCLES_20_Wednesday_1hour.cpkl"
     camera_names   = ["P32C02","P32C04","P32C05","P32C06"]
-    buffer_window  = 500 # frames load starting with specified time
+    buffer_window  = 100 # frames load starting with specified time
     start_time     = 0   # timestamp in seconds (first frame is 0 according to timestamps)
     
+    
+    hg = I24_RCS(save_path = hg_path,downsample = 2,default = "reference")
+    hg.load_correspondences_WACV("/home/worklab/Documents/datasets/I24-V/wacv_hg_v1")
 
     video_dir = "/home/worklab/Documents/datasets/I24-V/video"
     
-    dv = DataViewer(video_dir,
+    dv = VideoViewer(video_dir,
                     camera_names,
-                    hg_path,
+                    hg,
                     buffer_frames = buffer_window,
                     start_time = start_time, 
                     gps = gps_path,

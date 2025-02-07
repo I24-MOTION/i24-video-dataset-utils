@@ -7,7 +7,7 @@ import torch
 
 df   = "/home/worklab/Documents/datasets/I24-V/final_detections.npy"
 df   = "data/kiou_detections.npy"
-df = "/home/worklab/Documents/i24/i24-video-dataset-utils/CHANGEME.npy"
+df = "/home/worklab/Documents/datasets/2025-2-gamma-tracking/MOTION_NEW_TIME.npy"
 #df = "/home/worklab/Documents/i24/i24-video-dataset-utils/CHANGEME_OLD_DATA.npy"
 gf   = "data/gap_detections.npy"
 #df = "data/clustered_0_100.npy"
@@ -21,7 +21,7 @@ class Viewer:
 
         self.load_idx = 0
         self.startx = 3000
-        self.endx = 22000#4000
+        self.endx = 10000#4000
         self.starty = -60
         self.endy = 0
         
@@ -160,6 +160,7 @@ class Viewer:
                 
             print("Deleted preset {}".format(self.load_idx))
             
+            self.load_idx -= 1
             self.load()
     
     def next(self):
@@ -259,7 +260,7 @@ class Viewer:
         
     def plot3D(self):
         #self.plot_frame = np.zeros([1080,1920,3]).astype(np.uint8)
-        self.plot_frame = np.zeros([1080*2,1920*2,3]).astype(np.uint8)
+        self.plot_frame = np.zeros([1080,1920,3]).astype(np.uint8)
         
         P = self.P
         
@@ -586,82 +587,80 @@ class Viewer:
             self.frame_idx += 1             
        
         
-    def plot(self):
-        
-        if True:
+    def plot(self):       
             self.plot3D()
             return
         
-        self.plot_frame = np.zeros([200,int(self.ppf*(self.endx-self.startx)),3]).astype(np.uint8)
+    #     self.plot_frame = np.zeros([200,int(self.ppf*(self.endx-self.startx)),3]).astype(np.uint8)
         
         
-        # plot grid
-        if self.grid:
-            for y in [0,-12,-24,-36,-48,-60,-72,12,24,36,48,60,72]:
-                color = (40,40,40)
-                if y in [-12,12]:
-                    color = (0,255,255)
-                y += 100
-                cv2.line(self.plot_frame,(0,y),(self.plot_frame.shape[1]-1,y),color,1)
+    #     # plot grid
+    #     if self.grid:
+    #         for y in [0,-12,-24,-36,-48,-60,-72,12,24,36,48,60,72]:
+    #             color = (40,40,40)
+    #             if y in [-12,12]:
+    #                 color = (0,255,255)
+    #             y += 100
+    #             cv2.line(self.plot_frame,(0,y),(self.plot_frame.shape[1]-1,y),color,1)
         
             
-            for x in np.arange(0,30000,self.grid_minor):
-                if x < self.startx or x > self.endx:
-                    continue
-                color = (40,40,40)
-                cv2.line(self.plot_frame,(x-self.startx,0),(x-self.startx,self.plot_frame.shape[0]-1),color,1)
+    #         for x in np.arange(0,30000,self.grid_minor):
+    #             if x < self.startx or x > self.endx:
+    #                 continue
+    #             color = (40,40,40)
+    #             cv2.line(self.plot_frame,(x-self.startx,0),(x-self.startx,self.plot_frame.shape[0]-1),color,1)
         
-            for x in np.arange(0,30000,self.grid_major):
-                if x < self.startx or x > self.endx:
-                    continue
-                color = (100,100,100)
-                cv2.line(self.plot_frame,(x-self.startx,0),(x-self.startx,self.plot_frame.shape[0]-1),color,1)
-                cv2.putText(self.plot_frame, str("{}ft".format(x)), (x-self.startx,self.plot_frame.shape[0] - 15), cv2.FONT_HERSHEY_SIMPLEX, -0.4, color)                
+    #         for x in np.arange(0,30000,self.grid_major):
+    #             if x < self.startx or x > self.endx:
+    #                 continue
+    #             color = (100,100,100)
+    #             cv2.line(self.plot_frame,(x-self.startx,0),(x-self.startx,self.plot_frame.shape[0]-1),color,1)
+    #             cv2.putText(self.plot_frame, str("{}ft".format(x)), (x-self.startx,self.plot_frame.shape[0] - 15), cv2.FONT_HERSHEY_SIMPLEX, -0.4, color)                
 
         
-        # plot gps buffer
-        for idx in np.arange(self.cur_time_idx-10,self.cur_time_idx+1,1):
+    #     # plot gps buffer
+    #     for idx in np.arange(self.cur_time_idx-10,self.cur_time_idx+1,1):
         
-            if idx >= 0:
+    #         if idx >= 0:
                 
-                det = self.gps_buffer[idx]
+    #             det = self.gps_buffer[idx]
                 
-                color = (0,0,255)
-                if idx != self.cur_time_idx:
-                    color = (0,0,75)
+    #             color = (0,0,255)
+    #             if idx != self.cur_time_idx:
+    #                 color = (0,0,75)
         
-                for d in det:
-                    x1 = int(d[1]) - self.startx
-                    x2 = int(d[1] + d[3]) - self.startx
-                    y1 = int(d[2] - 0.5*d[4]) + 100
-                    y2 = int(d[2] + 0.5*d[4]) + 100 
+    #             for d in det:
+    #                 x1 = int(d[1]) - self.startx
+    #                 x2 = int(d[1] + d[3]) - self.startx
+    #                 y1 = int(d[2] - 0.5*d[4]) + 100
+    #                 y2 = int(d[2] + 0.5*d[4]) + 100 
                     
-                    cv2.rectangle(self.plot_frame,(x1,y1),(x2,y2),color,-1)
+    #                 cv2.rectangle(self.plot_frame,(x1,y1),(x2,y2),color,-1)
 
 
-        # plot detection buffer for most recent 3 frames
+    #     # plot detection buffer for most recent 3 frames
         
-        for idx in np.arange(self.cur_time_idx-4,self.cur_time_idx+1,1):
+    #     for idx in np.arange(self.cur_time_idx-4,self.cur_time_idx+1,1):
         
-            if idx >= 0:
+    #         if idx >= 0:
                 
-                det = self.detection_buffer[idx]
+    #             det = self.detection_buffer[idx]
                 
-                color = (255,255,255)
-                if idx != self.cur_time_idx:
-                    color = (50,50,0)
+    #             color = (255,255,255)
+    #             if idx != self.cur_time_idx:
+    #                 color = (50,50,0)
         
-                for d in det:
-                    x1 = int(d[1]) - self.startx
-                    x2 = int(d[1] + d[3]) - self.startx
-                    y1 = int(d[2] - 0.5*d[4]) + 100
-                    y2 = int(d[2] + 0.5*d[4]) + 100 
+    #             for d in det:
+    #                 x1 = int(d[1]) - self.startx
+    #                 x2 = int(d[1] + d[3]) - self.startx
+    #                 y1 = int(d[2] - 0.5*d[4]) + 100
+    #                 y2 = int(d[2] + 0.5*d[4]) + 100 
                     
-                    cv2.rectangle(self.plot_frame,(x1,y1),(x2,y2),color,1)
+    #                 cv2.rectangle(self.plot_frame,(x1,y1),(x2,y2),color,1)
                 
 
     
-        self.plot_frame = cv2.rotate(self.plot_frame, cv2.ROTATE_180)
+    #     self.plot_frame = cv2.rotate(self.plot_frame, cv2.ROTATE_180)
     
     def on_mouse(self, event, x, y, flags, params):
         if event == cv2.EVENT_LBUTTONDOWN and not self.clicked:

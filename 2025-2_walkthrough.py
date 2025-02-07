@@ -4,12 +4,13 @@ if __name__ == "__main__":
     import torch
     import _pickle as pickle
     import pandas as pd
-    from i24_rcs import I24_RCS  
     import matplotlib.pyplot as plt
     import cv2
     colors = np.random.rand(100000,3)
     
-    
+    # import custom repo, use: pip3 install git+https://github.com/I24-MOTION/i24_rcs@v1.1-stable
+    from i24_rcs import I24_RCS  
+
     
     # load each file
     
@@ -18,24 +19,149 @@ if __name__ == "__main__":
     
     # homography
     hg_cache_file = "/home/worklab/Documents/datasets/I24-V/WACV2024_hg_save.cpkl"
-    hg_directory  = "/home/worklab/Documents/datasets/I24-V/wacv_hg_v1"
+    hg_directory  = "/home/worklab/Documents/datasets/I24-V/wacv_hg_v1"                  
+    
+    rcs = I24_RCS(hg_cache_file,downsample = 2, default = "static")
+    rcs.load_correspondences_WACV(hg_directory) 
     
     # time-indexed data
-    detection_path = "/home/worklab/Documents/datasets/I24-V/final_detections.npy"
-    old_track_path = "/home/worklab/Documents/datasets/2025-2-gamma-tracking/MOTION_1HR_OLD.npy"
-    new_track_path = "/home/worklab/Documents/datasets/2025-2-gamma-tracking/MOTION_1HR_NEW.npy"
-    gps_data_path = "/home/worklab/Documents/datasets/I24-V/final_gps.csv"
+    detection_path = "/home/worklab/Documents/datasets/I24-V/final_detections.npy"                    # each row is [time,x pos,y pos,length,width,height,veh class,detector confidence]
+    old_track_path = "/home/worklab/Documents/datasets/2025-2-gamma-tracking/MOTION_OLD_TIME.npy"     # each row is [time,x pos,y pos,length,width,height,veh class,id]
+    new_track_path = "/home/worklab/Documents/datasets/2025-2-gamma-tracking/MOTION_NEW_TIME.npy"     # each row is [time,x pos,y pos,length,width,height,veh class,id]
+    gps_data_path = "/home/worklab/Documents/datasets/I24-V/final_gps.csv"                            # each row is [id,state plane x, state plane y,x,y,ts,length, width, height]
     
     
     # trajectory-indexed data
-    old_trajectory_path = "/home/worklab/Documents/i24/cluster-track-dev/data/0/post_0_3600_4000_20000.cpkl"
-    new_trajectory_path = "/home/worklab/Documents/i24/cluster-track-dev/data/0/tracklets_0_3600_4000_20000.cpkl"
+    old_trajectory_path = "/home/worklab/Documents/datasets/2025-2-gamma-tracking/old_0_3600_4000_20000.cpkl"     # dictionary indexed by id, each element is array with rows [time,x,y,l,w,h,class,ignore,ignore]]
+    new_trajectory_path = "/home/worklab/Documents/datasets/2025-2-gamma-tracking/new_0_3600_4000_20000.cpkl"     # dictionary indexed by id, each element is array with rows [time,x,y,l,w,h,class,ignore,ignore]]
+    
+    path = new_trajectory_path # alias to old or new path
     
     
-    path = new_trajectory_path
+    def load_MOTION_traj(file):
+        try:
+            with open(path,"rb") as f:
+                tracklets,tracklets_terminated = pickle.load(f) 
+        except:
+            with open(path,"rb") as f:
+                tracklets = pickle.load(f) 
+                tracklets_terminated = []
+               
+        return tracklets + tracklets_terminated    
     
     
-    #%% Parse time-indexed GPS data into GPS trajectories
+    #%% work with coordinate system
+    # %matplotlib (interactive backend) is recommended
+
+
+    
+    
+    # create a grid of dummy data along the road
+    # Expected form is a tensor of size [n_objects,6] 
+    # x_position (feet), y_position, length, width, height, direction (1 for EB or -1 for WB)
+    xrange = torch.arange(0,25000,step = 100)
+    yrange = torch.arange(-60,60,step = 12)
+    
+    
+    xrange = xrange.unsqueeze(0).expand(yrange.shape[0],xrange.shape[0])
+    yrange = yrange.unsqueeze(1).expand(xrange.shape)
+    xrange = xrange.reshape(-1)
+    yrange = yrange.reshape(-1)
+    
+    plt.figure()
+    plt.scatter(xrange,yrange)
+    for idx in range(xrange.shape[0]):
+        plt.text(xrange[idx],yrange[idx],"{}ft,{}ft".format(xrange[idx],yrange[idx]),rotation = 45)
+    plt.xlabel("Roadway X (ft)")
+    plt.ylabel("Roadway Y (ft)")
+    plt.show()
+    
+    
+    l = torch.zeros(xrange.shape)
+    w = torch.zeros(xrange.shape)
+    h = torch.zeros(xrange.shape)
+    direction = torch.sign(yrange)
+    
+    # [n_pts,6]
+    roadway_pts = torch.stack([xrange,yrange,l,w,h,direction]).transpose(1,0)
+
+    xrange = xrange.data.numpy()
+    yrange = yrange.data.numpy()
+    #[n_pts,8,3] 
+    # middle dimension is for corner coordiantes of a bounding box - since we set l,w,h to 0, we can use any corner index
+    # last dimension indexes state plane x, state plane y, z coordinate
+    state_plane_points = rcs.state_to_space(roadway_pts)
+    
+    # plot the grid in state plane
+    plt.figure()
+    plt.scatter(state_plane_points[:,0,0],state_plane_points[:,0,1])
+    for idx in range(state_plane_points.shape[0]):
+        plt.text(state_plane_points[idx,0,0],state_plane_points[idx,0,1],"{}ft,{}ft".format(xrange[idx],yrange[idx]))
+
+    plt.xlabel("State plane X (ft)")
+    plt.ylabel("State plane Y (ft)")
+    plt.axis("square")
+    plt.show()
+    
+    
+    
+    #%%  MOTION data is stored in the roadway coordinate frame -- let's convert it to State Plane coordinates
+    # %matplotlib (interactive backend) is recommended
+    tracklets = load_MOTION_traj(path)
+
+
+    count = 500
+    plt.figure(figsize = (10,10))
+    print("Plotting state plane data (epsg:2274) for first {} tracklets".format(count))
+    
+    for tidx in range(count):
+        tracklet = tracklets[tidx]
+        
+        # currently, the data is of the form [n_observations, 10] with each row [time,x_pos,y_pos,length,width,height,class, confidence, <metadata>,<metadata>]
+        
+        # the coordinate system expects data in the form [n,6] with each row [xpos,ypos,length,width,height,direction of travel]
+        data = torch.cat((tracklet[:,[1,2,3,4,5]],torch.sign(tracklet[:,2:3])),dim = 1)
+        
+        # put data in form [n,8,3] giving 8 bounding box corner coordinates for each bounding box
+        state_plane_data = rcs.state_to_space(data)
+        
+        # for simplicity, we plot only the first corner of each bounding box position
+        plt.scatter(state_plane_data[:,0,0],state_plane_data[:,0,1])
+    
+    plt.xlabel("State plane X (ft)")
+    plt.ylabel("State plane Y (ft)")
+    plt.show()
+    
+    #%% Similarly, we can convert to GPS coordinate system as well
+    # %matplotlib (interactive backend) is recommended
+    tracklets = load_MOTION_traj(path)
+
+
+    count = 500
+    plt.figure(figsize = (10,10))
+    print("Plotting GPS data (epsg:4326) for first {} tracklets".format(count))
+    
+    for tidx in range(count):
+        tracklet = tracklets[tidx]
+        
+        # currently, the data is of the form [n_observations, 10] with each row [time,x_pos,y_pos,length,width,height,class, confidence, <metadata>,<metadata>]
+        
+        # the coordinate system expects data in the form [n,6] with each row [xpos,ypos,length,width,height,direction of travel]
+        data = torch.cat((tracklet[:,[1,2,3,4,5]],torch.sign(tracklet[:,2:3])),dim = 1)
+        
+        # put data in form [n,8,3] giving 8 bounding box corner coordinates for each bounding box
+        state_plane_data = rcs.state_to_space(data)
+        gps_data = rcs.space_to_gps(state_plane_data)
+        plt.scatter(gps_data[:,0],gps_data[:,1])
+    
+    plt.xlabel("GPS Lat")
+    plt.ylabel("GPS Long")
+    plt.show()
+    
+    
+    #%% Parse time-indexed GPS data into GPS trajectories 
+    # This converts the gps csv file into a similar format to the trajectory-indexed data files above
+    
     gps = pd.read_csv(gps_data_path)
     gps = gps.sort_values(by=['Timestamp (s)']).to_numpy()
     
@@ -70,22 +196,16 @@ if __name__ == "__main__":
         for key in gps_traj.keys():
             gps_traj[key] = torch.stack(gps_traj[key])
         
+        # cache a save file so this doesn't need to be run again
         with open("gps_trajectories.cpkl","wb") as f:
             pickle.dump(gps_traj,f)
                 
                 
     
-    #%% Do some stuff with trajectory-indexed data
+    #%% Compute aggregate data statistics with the trajectory-indexed data
+    # you can run this for either the old data or new data - modify path accordingly above
     
-    try:
-        with open(path,"rb") as f:
-            tracklets,tracklets_terminated = pickle.load(f) 
-    except:
-        with open(path,"rb") as f:
-            tracklets = pickle.load(f) 
-            tracklets_terminated = []
-           
-    tracklets_all = tracklets + tracklets_terminated
+    tracklets = load_MOTION_traj(path)
     
     # for storing metrics
     lane_agg = {1:{"dist":[],"dur":[]},
@@ -100,7 +220,7 @@ if __name__ == "__main__":
     
     
     print("\nComputing length and duration statistics for trajectory data...")
-    for trk in tracklets_all:    
+    for trk in tracklets:    
         
         if len(trk) < 3:
             continue
@@ -145,7 +265,8 @@ if __name__ == "__main__":
         print("{}: {:.1f}ft, {:.1f}s".format(key,sum(lane_agg[key]["dist"])/(0.1+len(lane_agg[key]["dist"])), sum(lane_agg[key]["dur"])/(0.1+len(lane_agg[key]["dur"]) )))
     
     
-    #%% PLot a selection of trajectory data
+    #%% PLot a selection of trajectory data 
+    
     # pick window to plot 
     xmin = 8000
     xmax = 13000
@@ -155,7 +276,7 @@ if __name__ == "__main__":
     print("Plotting trajectory data...")
     for lane in [1,2,3,4,5.25]:
           plt.figure(figsize = (40,20))
-          for tidx,tra in enumerate(tracklets_all):
+          for tidx,tra in enumerate(tracklets):
               mask = torch.where(torch.logical_and(tra[:,2]  < -12*(lane), tra[:,2] > -12*(lane+1)),1,0)
               mask2 = torch.where(torch.logical_and(tra[:,1]  < xmax, tra[:,1] > xmin),1,0)
               mask3 = torch.where(torch.logical_and(tra[:,0]  < tmax, tra[:,0] > tmin),1,0)
@@ -186,76 +307,15 @@ if __name__ == "__main__":
     
     
     
-    #%% work with coordinate system
+
     
-    rcs = I24_RCS(hg_cache_file,downsample = 2, default = "static")
-    rcs.load_correspondences_WACV(hg_directory)
-    
-#%%    
-    try:
-        with open(path,"rb") as f:
-            tracklets,tracklets_terminated = pickle.load(f) 
-    except:
-        with open(path,"rb") as f:
-            tracklets = pickle.load(f) 
-            tracklets_terminated = []
-           
-    
-    #%%  MOTION data is stored in the roadway coordinate frame -- let's convert it to State Plane coordinates
-    # %matplotlib (interactive backend) is recommended
-    
-    count = 500
-    plt.figure(figsize = (10,10))
-    print("Plotting state plane data (epsg:2274) for first {} tracklets".format(count))
-    
-    for tidx in range(count):
-        tracklet = tracklets[tidx]
-        
-        # currently, the data is of the form [n_observations, 10] with each row [time,x_pos,y_pos,length,width,height,class, confidence, <metadata>,<metadata>]
-        
-        # the coordinate system expects data in the form [n,6] with each row [xpos,ypos,length,width,height,direction of travel]
-        data = torch.cat((tracklet[:,[1,2,3,4,5]],torch.sign(tracklet[:,2:3])),dim = 1)
-        
-        # put data in form [n,8,3] giving 8 bounding box corner coordinates for each bounding box
-        state_plane_data = rcs.state_to_space(data)
-        
-        # for simplicity, we plot only the first corner of each bounding box position
-        plt.scatter(state_plane_data[:,0,0],state_plane_data[:,0,1])
-    
-    plt.xlabel("State plane X (ft)")
-    plt.ylabel("State plane Y (ft)")
-    plt.show()
-    
-    #%% Similarly, we can convert to GPS coordinate system as well
-    # %matplotlib (interactive backend) is recommended
-    
-    count = 500
-    plt.figure(figsize = (10,10))
-    print("Plotting GPS data (epsg:4326) for first {} tracklets".format(count))
-    
-    for tidx in range(count):
-        tracklet = tracklets[tidx]
-        
-        # currently, the data is of the form [n_observations, 10] with each row [time,x_pos,y_pos,length,width,height,class, confidence, <metadata>,<metadata>]
-        
-        # the coordinate system expects data in the form [n,6] with each row [xpos,ypos,length,width,height,direction of travel]
-        data = torch.cat((tracklet[:,[1,2,3,4,5]],torch.sign(tracklet[:,2:3])),dim = 1)
-        
-        # put data in form [n,8,3] giving 8 bounding box corner coordinates for each bounding box
-        state_plane_data = rcs.state_to_space(data)
-        gps_data = rcs.space_to_gps(state_plane_data)
-        plt.scatter(gps_data[:,0],gps_data[:,1])
-    
-    plt.xlabel("GPS Lat")
-    plt.ylabel("GPS Long")
-    plt.show()
+
+
     
     
     #%% get extents for each camera FOV from hg_save_file
     # this is nice if you want to plot vehicle positions in a camera field of view  
     # in practice it makes sense to check for inclusion in the X range and simple sign matching in the Y range since the area covered by a camera extends in the Y direction somewhat beyond the dashed lane markings
-    
-           
            
     camera_extents = {}
     for key in rcs.correspondence.keys():
@@ -271,7 +331,7 @@ if __name__ == "__main__":
         ymin = torch.min(state_dashes[:,1])
         ymax = torch.max(state_dashes[:,1])
         camera_extents[key] = [xmin,ymin,xmax,ymax]
-        
+        print ("{} covers X range: [{:.1f},{:.1f}]ft;  Y range: [{:.1f},{:.1f}]ft".format(key,xmin,xmax,ymin,ymax))
     # for sanity, plot a few bounding boxes in a camera image
     
     tidx = 101
@@ -327,10 +387,12 @@ if __name__ == "__main__":
     #%% run overhead viewer
     from viz_detections import Viewer 
     
+    # this can be the detection_path or either the new or old track path
     #det = np.load(detection_path)
     det = np.load(new_track_path)
-    #gps = pd.read_csv(gps_data_path)
-    gps = None
+    
+    gps = pd.read_csv(gps_data_path)
+    
     
     v = Viewer(det,gps)
     v.run()
@@ -348,7 +410,7 @@ if __name__ == "__main__":
         dv = VideoViewer(video_dir,
                         camera_names,
                         rcs,
-                        buffer_frames = 400,
+                        buffer_frames = 100,
                         start_time = 0, 
                         gps = None,
                         manual = None,
@@ -360,7 +422,53 @@ if __name__ == "__main__":
         
     
         
+#%% Lets get up to some utter shenanigans now
+
+def traj_to_tensor(traj):
+    t = torch.zeros(len(traj["x_position"]),6)
+    t[:,0] = torch.tensor(traj["timestamp"])
+    t[:,1] = torch.tensor(traj["x_position"])
+    t[:,2] = torch.tensor(traj["y_position"])
+    t[:,3] = traj["length"]
+    t[:,4] = traj["width"]
+    t[:,5] = traj["height"]
+    return t
+
+from utils_opt import resample,opt2_l1_constr
+lam2_x= 1e-3
+lam2_y= 0
+lam3_x= 1e-7
+lam3_y= 1e-7
+lam1_x= 1e-3
+lam1_y= 0
+
+
+# select a trajectory 
+tidx = 100
+tracklets = load_MOTION_traj(path)
+traj = tracklets[tidx]
+
+# we need to put this trajectory back into the original I-24 MOTION inception format
+# dictionary with at least x_position,y_position,timestamp,direction   
+car = {"timestamp" : traj[:,0].data.numpy(),
+       "x_position": traj[:,1].data.numpy(),
+       "y_position": traj[:,2].data.numpy(),
+       "direction" : torch.sign(traj[0,2]).item(),
+       "length":traj[0,3],
+       "width" :traj[0,4],
+       "height":traj[0,5]
+       }
     
-    
-    
-    
+re_car = resample(car,dt = 0.2,fillnan = True)
+smooth_car = opt2_l1_constr(re_car.copy(), lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y)
+
+re_car = traj_to_tensor(re_car)
+smooth_car = traj_to_tensor(smooth_car)
+
+
+plt.figure()
+plt.plot(traj[:,0],traj[:,1])
+plt.plot(re_car[:,0],re_car[:,1])
+plt.plot(smooth_car[:,0],smooth_car[:,1])
+plt.legend(["start","resample","smooth"])
+
