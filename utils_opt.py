@@ -273,7 +273,7 @@ def opt2_l1_constr(car, lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y):
     x = x-xmin
     
     # x
-    max_iter = 10
+    max_iter = 1
     dir = car["direction"]
     
     cx_pre = 999
