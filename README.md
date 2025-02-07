@@ -38,7 +38,42 @@ This is a multi-camera video dataset consisting of 234 hours of video data recor
 
 4. You are free to create and share derivative products as long as you maintain the terms above.
 5. The data is provided “As is.” We make no other warranties, express or implied, and hereby disclaim all implied warranties, including any warranty of merchantability and warranty of fitness for a particular purpose.
+ # Code
+A few minimal scripts are included to get you started working with the data:
 
+## Requirements:
+
+You can use these commands to get started from scratch in a new python virtual environment:
+```
+# create virtualenv
+python -m venv tutorial
+source tutorial/bin/activate
+
+# get tensor/matrix/cv libs
+pip3 install torch torchvision
+pip3 install numpy
+pip3 install pandas
+pip install opencv-python
+pip install matplotlib
+
+# get I24 coordinate system
+pip3 install git+https://github.com/I24-MOTION/i24_rcs@v1.1-stable
+pip install pyproj
+
+# get optimization libraries for smoothing / resampling
+pip install cvxopt
+sudo apt-get install libblas-dev liblapack-dev libatlas-base-dev gfortran
+pip install scipy
+
+# get my own personal preference for IDE, skip if you want to use something else
+pip install spyder
+```
+**Other Requirements**:   
+Nvidia VPF - Only needed for loading video frames and timestamps using hardware acceleration and python bindings (you can work with the data without this (e.g. by using an OpenCV-backend video decoder to python binding) but given the file size it will be tremendously slow and burdensome). Available [here](https://github.com/NVIDIA/VideoProcessingFramework).
+
+
+
+  
 # Data 
 
 The following files are included in this dataset:
@@ -104,54 +139,5 @@ The following files are included in this dataset:
 
 
 
- # Code
-A few minimal scripts are included to get you started working with the data:
 
-## Requirements:
-   - i24_rcs - implements the coordinate system and homography containers for easy coordinate system transformations. Available [here](https://github.com/DerekGloudemans/i24_rcs).
-   - py-motmetrics - needed for evaluation of tracking results. Available [here](https://github.com/cheind/py-motmetrics)
-   - Nvidia VPF - needed for loading video frames and timestamps using hardware acceleration and python bindings (you can work with the data without this but given the file size it will be tremendously slow and burdensome). Available [here](https://github.com/NVIDIA/VideoProcessingFramework).
-
-
-## data_viewer.py Usage
-
-    from data_viewer import DataViewer
-    
-    # specify inputs
-    gps_path       = "<local dataset path>/final_gps.csv"  
-    manual_path    = "<local dataset path>/final_manual.csv" 
-    detection_path = "<local dataset path>/final_detections.npy" 
-    video_dir      = "<local dataset path>/video" 
-    hg_path        = "<local dataset path>/WACV2024_hg_save.cpkl" 
-    
-    camera_names   = ["P20C01","P20C02","P20C03","P20C04","P20C05","P20C06"] # for example, show 6 cameras - loading time and memory usage scales linearly with # of cameras
-    buffer_window  = 4000 # number of frames to buffer starting with specified time
-    start_time     = 200   # time in seconds from synchronized start of recording period (first frame timestamp is 0 roughly)
-    
-    # initialize DataViewer object
-    dv = DataViewer(video_dir,
-                    camera_names,
-                    hg_path,
-                    buffer_frames = buffer_window,
-                    start_time = start_time, 
-                    gps = gps_path,
-                    manual = manual_path,
-                    detections = detection_path)
-   
-    dv.run()
-
-
-## evaluate.py Usage
-For comparing the results of a tracking run against ground-truth trajectories (from GPS data)
-
-    from evaluate import evaluate
-
-    # specify inputs
-    gps_path = "<local dataset path>/track/GPS.cpkl"
-    track_path = "<local dataset path>/track/results_KIOU_10Hz.cpkl" # for example
-    eval_stride = 0.1 # interpolate GPS and tracked vehicle positions at (say) 0.1sec intervals
-    iou_threshold = 0.1 # required iou for a considered match between ground truth and predicted vehicle position
-    
-    evaluate(gps_path,track_path,eval_stride,iou_threshold)
-  
             
