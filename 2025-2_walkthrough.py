@@ -60,7 +60,7 @@ if __name__ == "__main__":
         return t
     
     
-    #%% work with coordinate system
+    #%% 1. Working with the I-24 coordinate systems
     # %matplotlib (interactive backend) is recommended
 
 
@@ -115,7 +115,7 @@ if __name__ == "__main__":
     
     
     
-    #%%  MOTION data is stored in the roadway coordinate frame -- let's convert it to State Plane coordinates
+    #%%  1b. MOTION data is stored in the roadway coordinate frame -- let's convert it to State Plane coordinates
     # %matplotlib (interactive backend) is recommended
     tracklets = load_MOTION_traj(path)
 
@@ -142,7 +142,7 @@ if __name__ == "__main__":
     plt.ylabel("State plane Y (ft)")
     plt.show()
     
-    #%% Similarly, we can convert to GPS coordinate system as well
+    #%% 1c. Similarly, we can convert to GPS coordinate system as well
     # %matplotlib (interactive backend) is recommended
     tracklets = load_MOTION_traj(path)
 
@@ -169,7 +169,7 @@ if __name__ == "__main__":
     plt.show()
     
     
-    #%% Parse time-indexed GPS data into GPS trajectories 
+    #%% 2. Parse time-indexed GPS data into GPS trajectories 
     # This converts the gps csv file into a similar format to the trajectory-indexed data files above
     
     gps = pd.read_csv(gps_data_path)
@@ -212,7 +212,7 @@ if __name__ == "__main__":
                 
                 
     
-    #%% Compute aggregate data statistics with the trajectory-indexed data
+    #%% 3. Compute aggregate data statistics with the trajectory-indexed data
     # you can run this for either the old data or new data - modify path accordingly above
     
     tracklets = load_MOTION_traj(path)
@@ -275,11 +275,13 @@ if __name__ == "__main__":
         print("{}: {:.1f}ft, {:.1f}s".format(key,sum(lane_agg[key]["dist"])/(0.1+len(lane_agg[key]["dist"])), sum(lane_agg[key]["dur"])/(0.1+len(lane_agg[key]["dur"]) )))
     
     
-    #%% PLot a selection of trajectory data 
-    
+    #%% 4. Plot a selection of trajectory data 
+    tracklets = load_MOTION_traj(path)
+
+
     # pick window to plot 
     xmin = 4000
-    xmax = 13000
+    xmax = 10000
     tmin = 500
     tmax = 800
     
@@ -323,7 +325,7 @@ if __name__ == "__main__":
 
     
     
-    #%% get extents for each camera FOV from hg_save_file
+    #%% 5. get extents for each camera FOV from hg_save_file
     # this is nice if you want to plot vehicle positions in a camera field of view  
     # in practice it makes sense to check for inclusion in the X range and simple sign matching in the Y range since the area covered by a camera extends in the Y direction somewhat beyond the dashed lane markings
            
@@ -343,14 +345,47 @@ if __name__ == "__main__":
         camera_extents[key] = [xmin,ymin,xmax,ymax]
         print ("{} covers X range: [{:.1f},{:.1f}]ft;  Y range: [{:.1f},{:.1f}]ft".format(key,xmin,xmax,ymin,ymax))
     # for sanity, plot a few bounding boxes in a camera image
-    
-    tidx = 101
-    tracklet = tracklets[tidx]
+
+
+
+    #%% 5b. Plot bounding boxes for a trajectory in background images
+    tracklets = load_MOTION_traj(path)
+
+
+    tidx = 100
+    traj = tracklets[tidx]
     cv2.namedWindow("window")
     
     count = 0
     buf = 50
     buffer = None
+    
+    
+    from utils_opt import resample,opt2_l1_constr
+    lam1_x= 3e-1
+    lam2_x= 0
+    lam3_x= 1e-7
+
+    lam1_y= 0
+    lam2_y= 0
+    lam3_y= 1e-3
+
+    
+    # wrangle form for resampling
+    car = {"timestamp" : traj[:,0].data.numpy(),
+           "x_position": traj[:,1].data.numpy(),
+           "y_position": traj[:,2].data.numpy(),
+           "direction" : torch.sign(traj[0,2]).item(),
+           "length":traj[0,3],
+           "width" :traj[0,4],
+           "height":traj[0,5]
+           }
+        
+    re_car = resample(car,dt = 0.04,fillnan = True)
+    smooth_car = opt2_l1_constr(re_car.copy(), lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y)
+    re_car = traj_to_tensor(re_car)
+    tracklet = traj_to_tensor(smooth_car)
+    
     
     
     for pos in tracklet:
@@ -394,7 +429,7 @@ if __name__ == "__main__":
     cv2.destroyAllWindows()
     
         
-    #%% run overhead viewer
+    #%% 6. Run overhead viewer
     from viz_detections import Viewer 
     
     # this can be the detection_path or either the new or old track path
@@ -406,11 +441,176 @@ if __name__ == "__main__":
     
     v = Viewer(det,gps)
     v.run()
+    
+    # a few key controls
+      #   # (shift 3) - load presaved parameters
+      #   < > - move forward and backwards on roadway
+      #   [ ] - adjust y range plotted
+      #   - + - zoom in and out
+      #   q w - go backwards / forwards in time
+      #   963 - activate the x,y,z vanishing points - you can then click and drag to move those vanishing points
+ 
+
+    
+    #%% 8. Lets apply some smoothing as from: https://github.com/I24-MOTION/I24-postprocessing
+    # if you reuse this code, please cite Yanbing Wang's paper "Automatic vehicle trajectory data reconstruction at scale" from which the method is taken
+    
+    from utils_opt import resample,opt2_l1_constr
+    lam1_x= 3e-1
+    lam2_x= 0
+    lam3_x= 1e-7
+    
+    lam1_y= 0
+    lam2_y= 0
+    lam3_y= 1e-3
+    
+    
+    
+    
+    # select a trajectory 
+    tidx = 100
+    tracklets = load_MOTION_traj(path)
+    traj = tracklets[tidx]
+    
+    # we need to put this trajectory back into the original I-24 MOTION inception format
+    # dictionary with at least x_position,y_position,timestamp,direction   
+    car = {"timestamp" : traj[:,0].data.numpy(),
+           "x_position": traj[:,1].data.numpy(),
+           "y_position": traj[:,2].data.numpy(),
+           "direction" : torch.sign(traj[0,2]).item(),
+           "length":traj[0,3],
+           "width" :traj[0,4],
+           "height":traj[0,5]
+           }
+        
+    re_car = resample(car,dt = 0.04,fillnan = True)
+    smooth_car = opt2_l1_constr(re_car.copy(), lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y)
+    
+    re_car = traj_to_tensor(re_car)
+    smooth_car = traj_to_tensor(smooth_car)
+    
+    
+    plt.figure()
+    plt.plot(traj[:,0],traj[:,1])
+    plt.plot(re_car[:,0],re_car[:,1])
+    plt.plot(smooth_car[:,0],smooth_car[:,1])
+    plt.ylabel("X-Position (ft)")
+    plt.xlabel("Time (s)")
+    plt.legend(["start","resample","smooth"])
+    
+    plt.figure()
+    plt.plot(traj[:-1,0],(traj[1:,1]-traj[:-1,1])/(traj[1:,0]-traj[:-1,0]))
+    plt.plot(re_car[:-1,0],(re_car[1:,1]-re_car[:-1,1])/(re_car[1:,0]-re_car[:-1,0]))
+    plt.plot(smooth_car[:-1,0],(smooth_car[1:,1]-smooth_car[:-1,1])/(smooth_car[1:,0]-smooth_car[:-1,0]))
+    plt.ylim([-150,150])
+    plt.ylabel("X-Velocity (ft/s)")
+    plt.xlabel("Time (s)")
+    plt.legend(["start","resample","smooth"])
+    
+    
+    #%% 9. Lets smooth a platoon
+    # if you reuse this code, please cite Yanbing Wang's Paper "Automatic vehicle trajectory data reconstruction at scale" from which the method is taken
+    
+    
+    from utils_opt import resample,opt2_l1_constr
+    lam1_x= 3e-1
+    lam2_x= 0
+    lam3_x= 1e-7
+    
+    lam1_y= 0
+    lam2_y= 0
+    lam3_y= 1e-3
+    
+    
+    
+    tracklets = load_MOTION_traj(path)
+    
+    
+    # you can select another set of ids manually by inspecting the above time-space plots
+    traj_ids = [46787,46614,46710,46796,1326,46981,46689,46653,674,46657,46728,46674,46616]
+    #traj_ids = [46787]
+    
+    
+    
+    
+    
+    smoothed = []
+    
+    # iterate over trajectories
+    for t,tidx in enumerate(traj_ids):
+        print("On tracklet {}".format(tidx))
+        traj = tracklets[tidx]
+        
+        # wrangle form for resampling
+        car = {"timestamp" : traj[:,0].data.numpy(),
+               "x_position": traj[:,1].data.numpy(),
+               "y_position": traj[:,2].data.numpy(),
+               "direction" : torch.sign(traj[0,2]).item(),
+               "length":traj[0,3],
+               "width" :traj[0,4],
+               "height":traj[0,5]
+               }
+            
+        re_car = resample(car,dt = 0.04,fillnan = True)
+        smooth_car = opt2_l1_constr(re_car.copy(), lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y)
+        re_car = traj_to_tensor(re_car)
+        smooth_car = traj_to_tensor(smooth_car)
+        smoothed.append([t,tidx,smooth_car])
+    
+    #%% Plot the result
+    
+    # define colors for plotting
+    c = np.linspace(0,1,num = len(traj_ids))
+    colors = np.zeros([len(traj_ids),3])
+    colors[:,0] = c
+    colors[:,2] = 1-c
+    #colors = np.random.rand(30,3)
         
     
+    fig, ax = plt.subplots(3,1, sharex=True)
+    leg = []
+    for packet in smoothed:
+        t,tidx,smooth_car = packet
+        # plot position
+        ax[0].plot(smooth_car[:,0],smooth_car[:,1],color = colors[t])
+        
+        
+        # plot relative position relative to lead vehicle
+        lead_idx = 0
+        
+        rel_x = []
+        rel_xt = []
+        for idx in range(smooth_car.shape[0]):
+            while smooth_car[idx,0] < smoothed[0][2][0,0]:
+                continue # skip all times before the lead car exists
+                
+            while lead_idx < smoothed[0][2].shape[0] and smoothed[0][2][lead_idx,0] < smooth_car[idx,0]:
+                lead_idx += 1
+            
+            if lead_idx >= smoothed[0][2].shape[0]: break # skip all times after lead_car exists
+            
+            rel_x.append( smooth_car[idx,1] - smoothed[0][2][lead_idx,1])
+            rel_xt.append(smooth_car[idx,0])
+            
+        ax[1].plot(rel_xt,torch.tensor(rel_x),color = colors[t])
+                
+        
+        # plot speed
+        ax[2].plot(smooth_car[:-1,0],-1*(smooth_car[1:,1]-smooth_car[:-1,1])/(smooth_car[1:,0]-smooth_car[:-1,0]),color = colors[t])
+        leg.append("Platoon vehicle {} (id {})".format(t,tidx))
     
     
-    #%% Plot boxes for one camera
+    # Make plot pretty
+    ax[2].set_xlabel("Time (s)")
+    ax[1].set_ylabel("Distance Behind Lead Vehicle (ft)")
+    ax[0].set_ylabel("X Position (ft)")
+    ax[2].set_ylabel("Velocity (ft/s)")
+    fig.legend(leg)
+    ax[0].set_title("Platoon Plot")
+
+    
+    
+    #%% 7. Plot boxes for a few cameras on video data
     if __name__ == "__main__":
         from data_viewer import VideoViewer
     
@@ -426,160 +626,9 @@ if __name__ == "__main__":
                         manual = None,
                         detections = new_track_path)
         dv.run()
-          
-                
+        # d   - toggle detections on /off
+        # []  - switch cameras
+        # 8 9 - go back/advance a frame
       
         
-#%% Lets apply some smoothing as from: https://github.com/I24-MOTION/I24-postprocessing
-# if you reuse this code, please cite Yanbing Wang's Paper "Automatic vehicle trajectory data reconstruction at scale" from which the method is taken
-
-from utils_opt import resample,opt2_l1_constr
-lam1_x= 1e-3
-lam2_x= 0
-lam3_x= 1e-7
-
-lam1_y= 0
-lam2_y= 0
-lam3_y= 1e-3
-
-
-
-
-# select a trajectory 
-tidx = 100
-tracklets = load_MOTION_traj(path)
-traj = tracklets[tidx]
-
-# we need to put this trajectory back into the original I-24 MOTION inception format
-# dictionary with at least x_position,y_position,timestamp,direction   
-car = {"timestamp" : traj[:,0].data.numpy(),
-       "x_position": traj[:,1].data.numpy(),
-       "y_position": traj[:,2].data.numpy(),
-       "direction" : torch.sign(traj[0,2]).item(),
-       "length":traj[0,3],
-       "width" :traj[0,4],
-       "height":traj[0,5]
-       }
-    
-re_car = resample(car,dt = 0.04,fillnan = True)
-smooth_car = opt2_l1_constr(re_car.copy(), lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y)
-
-re_car = traj_to_tensor(re_car)
-smooth_car = traj_to_tensor(smooth_car)
-
-
-plt.figure()
-plt.plot(traj[:,0],traj[:,1])
-plt.plot(re_car[:,0],re_car[:,1])
-plt.plot(smooth_car[:,0],smooth_car[:,1])
-plt.ylabel("X-Position (ft)")
-plt.xlabel("Time (s)")
-plt.legend(["start","resample","smooth"])
-
-plt.figure()
-plt.plot(traj[:-1,0],(traj[1:,1]-traj[:-1,1])/(traj[1:,0]-traj[:-1,0]))
-plt.plot(re_car[:-1,0],(re_car[1:,1]-re_car[:-1,1])/(re_car[1:,0]-re_car[:-1,0]))
-plt.plot(smooth_car[:-1,0],(smooth_car[1:,1]-smooth_car[:-1,1])/(smooth_car[1:,0]-smooth_car[:-1,0]))
-plt.ylim([-150,150])
-plt.ylabel("X-Velocity (ft/s)")
-plt.xlabel("Time (s)")
-plt.legend(["start","resample","smooth"])
-
-
-#%% Lets smooth a platoon
-# if you reuse this code, please cite Yanbing Wang's Paper "Automatic vehicle trajectory data reconstruction at scale" from which the method is taken
-
-
-from utils_opt import resample,opt2_l1_constr
-lam1_x= 1e-3
-lam2_x= 0
-lam3_x= 1e-7
-
-lam1_y= 0
-lam2_y= 0
-lam3_y= 1e-3
-
-
-
-tracklets = load_MOTION_traj(path)
-
-
-# you can select another set of ids manually by inspecting the above time-space plots
-traj_ids = [46787,46614,46710,46796,1326,46981,46689,46653,674,46657,46728,46674,46616]
-#traj_ids = [46787]
-
-
-# define colors for plotting
-c = np.linspace(0,1,num = len(traj_ids))
-colors = np.zeros([len(traj_ids),3])
-colors[:,0] = c
-colors[:,2] = 0.5-0.5*c
-#colors = np.random.rand(30,3)
-
-
-
-smoothed = []
-
-# iterate over trajectories
-for t,tidx in enumerate(traj_ids):
-    print("On tracklet {}".format(tidx))
-    traj = tracklets[tidx]
-    
-    # wrangle form for resampling
-    car = {"timestamp" : traj[:,0].data.numpy(),
-           "x_position": traj[:,1].data.numpy(),
-           "y_position": traj[:,2].data.numpy(),
-           "direction" : torch.sign(traj[0,2]).item(),
-           "length":traj[0,3],
-           "width" :traj[0,4],
-           "height":traj[0,5]
-           }
-        
-    re_car = resample(car,dt = 0.04,fillnan = True)
-    smooth_car = opt2_l1_constr(re_car.copy(), lam2_x, lam2_y, lam3_x, lam3_y, lam1_x, lam1_y)
-    re_car = traj_to_tensor(re_car)
-    smooth_car = traj_to_tensor(smooth_car)
-    smoothed.append([t,tidx,smooth_car])
-
-#%% Plot the result
-    
-fig, ax = plt.subplots(3,1, sharex=True)
-leg = []
-for packet in smoothed:
-    t,tidx,smooth_car = packet
-    # plot position
-    ax[0].plot(smooth_car[:,0],smooth_car[:,1],color = colors[t])
-    
-    
-    # plot relative position relative to lead vehicle
-    lead_idx = 0
-    
-    rel_x = []
-    rel_xt = []
-    for idx in range(smooth_car.shape[0]):
-        while smooth_car[idx,0] < smoothed[0][2][0,0]:
-            continue # skip all times before the lead car exists
-            
-        while lead_idx < smoothed[0][2].shape[0] and smoothed[0][2][lead_idx,0] < smooth_car[idx,0]:
-            lead_idx += 1
-        
-        if lead_idx >= smoothed[0][2].shape[0]: break # skip all times after lead_car exists
-        
-        rel_x.append( smooth_car[idx,1] - smoothed[0][2][lead_idx,1])
-        rel_xt.append(smooth_car[idx,0])
-        
-    ax[1].plot(rel_xt,torch.tensor(rel_x),color = colors[t])
-            
-    
-    # plot speed
-    ax[2].plot(smooth_car[:-1,0],-1*(smooth_car[1:,1]-smooth_car[:-1,1])/(smooth_car[1:,0]-smooth_car[:-1,0]),color = colors[t])
-    leg.append("Platoon vehicle {} (id {})".format(t,tidx))
-
-
-# Make plot pretty
-ax[2].set_xlabel("Time (s)")
-ax[1].set_ylabel("Distance Behind Lead Vehicle (ft)")
-ax[0].set_ylabel("X Position (ft)")
-ax[2].set_ylabel("Velocity (ft/s)")
-fig.legend(leg)
-ax[0].set_title("Platoon Plot")
+   
