@@ -41,9 +41,8 @@ This is a multi-camera video dataset consisting of 234 hours of video data recor
 
 4. You are free to create and share derivative products as long as you maintain the terms above.
 5. The data is provided “As is.” We make no other warranties, express or implied, and hereby disclaim all implied warranties, including any warranty of merchantability and warranty of fitness for a particular purpose.
- # Code
-A few minimal scripts are included to get you started working with the data:
 
+   
 ## Requirements:
 
 You can use these commands to get started from scratch in a new python virtual environment:
@@ -75,8 +74,6 @@ pip install spyder
 Nvidia VPF - Only needed for loading video frames and timestamps using hardware acceleration and python bindings (you can work with the data without this (e.g. by using an OpenCV-backend video decoder to python binding) but given the file size it will be tremendously slow and burdensome). Available [here](https://github.com/NVIDIA/VideoProcessingFramework).
 
 
-
-  
 # Data 
 
 The following files are included in this dataset:
