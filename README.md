@@ -1,4 +1,7 @@
+# Tutorial Video for new tracking data release:
+https://youtu.be/pdfvaix2TPE
 
+# Overview
 This repository contains utilities for working with the I-24 MOTION Video "I24V" dataset, which appeared at WACV 2024 in an article titled "So you think you can track?" (Gloudemans et al., 2024); the article is available [here](https://openaccess.thecvf.com/content/WACV2024/papers/Gloudemans_So_You_Think_You_Can_Track_WACV_2024_paper.pdf). 
 
 [The I24-V Dataset is available here](https://i24motion.org/data).
